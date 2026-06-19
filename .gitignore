@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Output files (keep analysis results)
+# analysis_output/  # 取消注释如果想忽略输出文件夹
+mlruns/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data files
+*.tiff
+*.tif
+*.png
+*.jpg
+*.jpeg
+!analysis_output/*.png
+
+# Jupyter
+.ipynb_checkpoints/
