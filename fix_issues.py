@@ -13,6 +13,110 @@ import os
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+# ===================== 可导入的物理模型函数 =====================
+def calculate_hardness(grain_size, carbide_ratio, porosity, crack_ratio):
+    """
+    基于物理机制计算显微硬度
+    
+    Args:
+        grain_size: 晶粒尺寸 (μm)
+        carbide_ratio: 析出相/碳化物面积占比 (%)
+        porosity: 气孔孔隙率 (%)
+        crack_ratio: 微裂纹面积占比 (%)
+    
+    Returns:
+        硬度值 (HV)
+    
+    公式: HV = 400 + 200/√d + 8√carbide - 20×porosity - 8×crack
+    """
+    hardness = (
+        400 +  # 基体基准硬度
+        200 / np.sqrt(grain_size) +  # Hall-Petch强化
+        8 * np.sqrt(carbide_ratio) +  # 沉淀强化
+        - 20 * porosity -  # 气孔软化(负贡献)
+        8 * crack_ratio  # 裂纹软化(负贡献)
+    )
+    return np.maximum(hardness, 0)
+
+def calculate_tensile_strength(grain_size, carbide_ratio, porosity, crack_ratio):
+    """
+    基于物理机制计算抗拉强度
+    
+    Args:
+        grain_size: 晶粒尺寸 (μm)
+        carbide_ratio: 析出相/碳化物面积占比 (%)
+        porosity: 气孔孔隙率 (%)
+        crack_ratio: 微裂纹面积占比 (%)
+    
+    Returns:
+        抗拉强度 (MPa)
+    
+    公式: TS = 500 + 150/√d + 5√carbide - 30×porosity - 15×crack
+    """
+    strength = (
+        500 +  # 基体基准强度
+        150 / np.sqrt(grain_size) +  # Hall-Petch强化
+        5 * np.sqrt(carbide_ratio) +  # 沉淀强化
+        - 30 * porosity -  # 气孔软化(负贡献)
+        15 * crack_ratio  # 裂纹软化(负贡献)
+    )
+    return np.maximum(strength, 0)
+
+def calculate_wear_rate(grain_size, carbide_ratio, porosity):
+    """
+    基于物理机制计算磨损速率
+    
+    Args:
+        grain_size: 晶粒尺寸 (μm)
+        carbide_ratio: 析出相/碳化物面积占比 (%)
+        porosity: 气孔孔隙率 (%)
+    
+    Returns:
+        磨损速率 (mg/h)
+    
+    公式: WR = 0.003 + 0.0006√d + 0.0008×porosity - 0.00005√carbide
+    """
+    wear_rate = (
+        0.003 +  # 基体基准磨损速率
+        0.0006 * np.sqrt(grain_size) +  # 晶粒尺寸影响
+        0.0008 * porosity -  # 气孔影响
+        0.00005 * np.sqrt(carbide_ratio)  # 析出相影响(降低磨损)
+    )
+    return np.maximum(wear_rate, 0)
+
+def apply_physics_models_to_dataframe(df):
+    """
+    将物理模型应用到DataFrame
+    
+    Args:
+        df: 包含金相定量表征数据的DataFrame
+    
+    Returns:
+        添加了预测列的DataFrame
+    """
+    df['预测显微硬度(HV)_物理模型'] = calculate_hardness(
+        df['熔覆层平均晶粒尺寸(μm)'],
+        df['析出相/碳化物面积占比(%)'],
+        df['气孔孔隙率(%)'],
+        df['微裂纹面积占比(%)']
+    )
+    
+    df['预测抗拉强度(MPa)_物理模型'] = calculate_tensile_strength(
+        df['熔覆层平均晶粒尺寸(μm)'],
+        df['析出相/碳化物面积占比(%)'],
+        df['气孔孔隙率(%)'],
+        df['微裂纹面积占比(%)']
+    )
+    
+    df['预测磨损速率(mg/h)_物理模型'] = calculate_wear_rate(
+        df['熔覆层平均晶粒尺寸(μm)'],
+        df['析出相/碳化物面积占比(%)'],
+        df['气孔孔隙率(%)']
+    )
+    
+    return df
+
+# ===================== 主脚本执行部分 =====================
 # 读取金相数据
 BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
 csv_path = os.path.join(BASE_DIR, "analysis_output", "金相定量表征数据汇总.csv")

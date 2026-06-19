@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 from scipy import stats
 import os
 
+# 导入物理模型函数，避免代码重复
+from fix_issues import apply_physics_models_to_dataframe
+
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
@@ -18,16 +21,8 @@ BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及
 csv_path = os.path.join(BASE_DIR, "analysis_output", "金相定量表征数据汇总.csv")
 df = pd.read_csv(csv_path)
 
-# 计算基于物理模型的硬度预测值
-df['预测显微硬度(HV)_物理模型'] = (
-    400 +  # 基体基准硬度
-    200 / np.sqrt(df['熔覆层平均晶粒尺寸(μm)']) +  # Hall-Petch强化
-    8 * np.sqrt(df['析出相/碳化物面积占比(%)']) +  # 沉淀强化
-    - 20 * df['气孔孔隙率(%)'] -  # 气孔软化(负贡献)
-    8 * df['微裂纹面积占比(%)']  # 裂纹软化(负贡献)
-)
-# 确保非负
-df['预测显微硬度(HV)_物理模型'] = np.maximum(df['预测显微硬度(HV)_物理模型'], 0)
+# 使用导入的函数计算物理模型预测值
+df = apply_physics_models_to_dataframe(df)
 
 print("=" * 80)
 print("晶粒演变热力学分析 - 建立物理链条")

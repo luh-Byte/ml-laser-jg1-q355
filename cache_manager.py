@@ -116,6 +116,9 @@ def clean_output_items(patterns=None):
     
     Args:
         patterns: 文件路径模式列表，如 ['*.csv', '*.png']
+    
+    Note:
+        会跳过results_by_date目录，避免误删备份结果
     """
     results = []
     
@@ -125,6 +128,10 @@ def clean_output_items(patterns=None):
     
     for pattern in patterns:
         for fpath in glob.glob(os.path.join(OUTPUT_DIR, '**', pattern), recursive=True):
+            # 跳过results_by_date目录，避免误删备份结果
+            if 'results_by_date' in fpath:
+                continue
+            
             try:
                 os.remove(fpath)
                 rel_path = os.path.relpath(fpath, OUTPUT_DIR)
