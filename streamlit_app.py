@@ -30,20 +30,121 @@ SAVE_RESULT_FOLDER = os.path.join(BASE_DIR, "analysis_output")
 os.makedirs(SAVE_RESULT_FOLDER, exist_ok=True)
 os.makedirs(os.path.join(SAVE_RESULT_FOLDER, "ml_results"), exist_ok=True)
 
+# ===================== 模型缓存路径 =====================
+MODEL_CACHE_DIR = os.path.join(SAVE_RESULT_FOLDER, "model_cache")
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+
+MODELS_CACHE_FILE = os.path.join(MODEL_CACHE_DIR, "trained_models.joblib")
+EVAL_REPORT_CACHE_FILE = os.path.join(MODEL_CACHE_DIR, "eval_report.csv")
+SHAP_VALUES_CACHE_FILE = os.path.join(MODEL_CACHE_DIR, "shap_values.pkl")
+DATA_HASH_CACHE_FILE = os.path.join(MODEL_CACHE_DIR, "data_hash.txt")
+
+# ===================== 模型保存/加载函数 =====================
+def save_models_to_cache(reg_models, eval_report, shap_values=None):
+    """保存训练好的模型到本地缓存"""
+    import joblib
+    try:
+        # 保存模型
+        joblib.dump(reg_models, MODELS_CACHE_FILE)
+        # 保存评估报告
+        eval_report.to_csv(EVAL_REPORT_CACHE_FILE, index=False, encoding='utf-8-sig')
+        # 保存SHAP值（如有）
+        if shap_values is not None:
+            joblib.dump(shap_values, SHAP_VALUES_CACHE_FILE)
+        return True
+    except Exception as e:
+        print(f"模型保存失败: {e}")
+        return False
+
+def load_models_from_cache():
+    """从本地缓存加载模型"""
+    import joblib
+    try:
+        if not os.path.exists(MODELS_CACHE_FILE):
+            return None, None, None
+        reg_models = joblib.load(MODELS_CACHE_FILE)
+        eval_report = pd.read_csv(EVAL_REPORT_CACHE_FILE)
+        shap_values = None
+        if os.path.exists(SHAP_VALUES_CACHE_FILE):
+            shap_values = joblib.load(SHAP_VALUES_CACHE_FILE)
+        return reg_models, eval_report, shap_values
+    except Exception as e:
+        print(f"模型加载失败: {e}")
+        return None, None, None
+
+def get_data_hash(csv_path):
+    """获取数据的MD5哈希，用于判断数据是否变更"""
+    import hashlib
+    try:
+        with open(csv_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except:
+        return None
+
+def is_cache_valid(csv_path):
+    """检查缓存是否有效（数据未变更）"""
+    if not os.path.exists(MODELS_CACHE_FILE):
+        return False
+    if not os.path.exists(DATA_HASH_CACHE_FILE):
+        return False
+    try:
+        with open(DATA_HASH_CACHE_FILE, 'r') as f:
+            cached_hash = f.read().strip()
+        current_hash = get_data_hash(csv_path)
+        return cached_hash == current_hash
+    except:
+        return False
+
+def update_data_hash(csv_path):
+    """更新数据哈希缓存"""
+    try:
+        current_hash = get_data_hash(csv_path)
+        if current_hash:
+            with open(DATA_HASH_CACHE_FILE, 'w') as f:
+                f.write(current_hash)
+    except:
+        pass
+
 # ===================== 缓存的数据和模型 =====================
 @st.cache_resource
-def load_ml_pipeline(csv_path=None, progress_callback=None):
-    """缓存ML管道，避免每次重新训练"""
+def load_ml_pipeline(csv_path=None, _progress_callback=None):
+    """智能加载ML管道：优先从缓存加载，缓存无效时重新训练"""
     try:
-        # 动态导入主代码中的模块
         import importlib.util
         spec = importlib.util.spec_from_file_location("picture_processing", 
             os.path.join(BASE_DIR, "picture processing.py"))
         pp = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(pp)
         
-        # 运行ML流程，传递进度回调
-        results = pp.run_ml_pipeline(csv_path=csv_path, progress_callback=progress_callback)
+        # 检查缓存是否有效
+        if csv_path and os.path.exists(csv_path) and is_cache_valid(csv_path):
+            print("发现有效缓存，从本地加载模型...")
+            reg_models, eval_report, shap_values = load_models_from_cache()
+            if reg_models is not None:
+                # 构建results字典
+                results = {
+                    'reg_models': reg_models,
+                    'eval_report': eval_report,
+                    'shap_values': shap_values,
+                    'from_cache': True
+                }
+                print("模型加载成功！")
+                return results, pp
+        
+        # 缓存无效或不存在，重新训练
+        print("缓存无效或不存在，开始训练模型...")
+        results = pp.run_ml_pipeline(csv_path=csv_path, progress_callback=_progress_callback)
+        
+        if results:
+            # 保存模型到缓存
+            reg_models = results.get('reg_models')
+            eval_report = results.get('eval_report')
+            shap_values = results.get('shap_values')
+            if reg_models is not None:
+                save_models_to_cache(reg_models, eval_report, shap_values)
+                update_data_hash(csv_path)
+                print("模型已保存到缓存")
+        
         return results, pp
     except Exception as e:
         st.error(f"ML流程加载失败: {e}")
@@ -59,6 +160,8 @@ def load_csv_data(csv_path):
 # ===================== 图表生成函数 =====================
 def plot_pearson_correlation(quant_df, feature_names, target_col):
     """绘制Pearson相关系数矩阵"""
+    # 去除重复列
+    quant_df = quant_df.loc[:, ~quant_df.columns.duplicated()]
     numeric_cols = quant_df[feature_names + [target_col]].select_dtypes(include=[np.number]).columns
     corr_matrix = quant_df[numeric_cols].corr(method='pearson')
     
@@ -408,7 +511,7 @@ def main():
             status_text.text(f"[{stage}/4] {message}")
         
         with st.spinner("正在训练ML模型，请稍候..."):
-            results, pp = load_ml_pipeline(csv_path, progress_callback=progress_callback)
+            results, pp = load_ml_pipeline(csv_path, _progress_callback=progress_callback)
             if results:
                 st.session_state.ml_results = results
                 st.session_state.pp_module = pp
