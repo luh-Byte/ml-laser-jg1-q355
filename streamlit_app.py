@@ -1,14 +1,54 @@
 """
 金相图像分析 - Streamlit 交互式前端界面
 支持实时生成和查看各种分析图表
+
+加速支持: CPU多线程 + OpenCL GPU加速
 """
 
-import streamlit as st
 import os
 import sys
+import platform
+import threading
+
+# ===================== 硬件加速配置（必须在其他库之前）=====================
+def configure_hardware_acceleration():
+    """配置硬件加速：CPU多线程 + GPU OpenCL"""
+    
+    # 1. OpenCV OpenCL GPU加速
+    try:
+        import cv2
+        if cv2.ocl.haveOpenCL():
+            cv2.ocl.setUseOpenCL(True)
+            print(f"  [GPU] OpenCL已启用: {cv2.ocl.Device.getDefault().name()}")
+        else:
+            print("  [GPU] OpenCL未启用，使用CPU")
+    except Exception as e:
+        print(f"  [GPU] OpenCL配置失败: {e}")
+    
+    # 2. NumPy/Intel MKL多线程配置
+    try:
+        import numpy as np
+        # 使用所有可用CPU核心
+        os.environ['OMP_NUM_THREADS'] = str(os.cpu_count() or 8)
+        os.environ['MKL_NUM_THREADS'] = str(os.cpu_count() or 8)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(os.cpu_count() or 8)
+        print(f"  [CPU] NumPy多线程: {os.cpu_count() or 8} 核心")
+    except Exception as e:
+        print(f"  [CPU] NumPy配置失败: {e}")
+    
+    # 3. Intel OpenMP加速
+    try:
+        if platform.system() == 'Windows':
+            os.environ['MKL_ENABLE_INSTRUCTIONS'] = 'AVX2'
+    except:
+        pass
+
+configure_hardware_acceleration()
+
+# ===================== 标准库导入 =====================
+import streamlit as st
 import pandas as pd
 import numpy as np
-import threading
 
 # 设置matplotlib后端（在streamlit中不需要Agg）
 import matplotlib

@@ -2,10 +2,52 @@
 金相图像定量分析程序
 基于图像处理方法进行金相组织分割
 适用于Q355基材+JG-1铁基粉末激光熔覆金相分析
+
+加速支持: CPU多线程 + OpenCL GPU加速
 """
 
 import os
+import platform
+import warnings
+warnings.filterwarnings('ignore')
 
+# ===================== 硬件加速配置 =====================
+# 必须在其他库之前配置
+def configure_hardware_acceleration():
+    """配置硬件加速：CPU多线程 + GPU OpenCL"""
+    
+    # 1. OpenCV OpenCL GPU加速
+    try:
+        import cv2
+        if cv2.ocl.haveOpenCL():
+            cv2.ocl.setUseOpenCL(True)
+            print(f"  [GPU] OpenCL已启用: {cv2.ocl.Device.getDefault().name()}")
+        else:
+            print("  [GPU] OpenCL未启用，使用CPU")
+    except Exception as e:
+        print(f"  [GPU] OpenCL配置失败: {e}")
+    
+    # 2. NumPy多线程配置
+    try:
+        import numpy as np
+        # 使用所有可用CPU核心
+        os.environ['OMP_NUM_THREADS'] = str(os.cpu_count() or 8)
+        os.environ['MKL_NUM_THREADS'] = str(os.cpu_count() or 8)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(os.cpu_count() or 8)
+        print(f"  [CPU] NumPy多线程: {os.cpu_count() or 8} 核心")
+    except Exception as e:
+        print(f"  [CPU] NumPy配置失败: {e}")
+    
+    # 3. Intel OpenMP加速（对于Intel CPU）
+    try:
+        if platform.system() == 'Windows':
+            os.environ['MKL_ENABLE_INSTRUCTIONS'] = 'AVX2'
+    except:
+        pass
+
+configure_hardware_acceleration()
+
+# ===================== 标准库导入 =====================
 import cv2
 import numpy as np
 from PIL import Image
@@ -14,8 +56,6 @@ from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from tqdm import tqdm
-import warnings
-warnings.filterwarnings('ignore')
 
 # ===================== 全局配置参数 =====================
 BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
@@ -763,13 +803,45 @@ class RegressionModels:
         return {}
     
     def _create_model(self, model_name, params):
-        """根据参数创建模型"""
+        """根据参数创建模型（支持GPU/CPU加速）"""
+        # 检查GPU可用性
+        try:
+            import xgboost as xgb
+            gpu_available = xgb.build_info().get('cuda_available', False)
+        except:
+            gpu_available = False
+        
+        # 尝试检测OpenCL
+        try:
+            import cv2
+            opencl_available = cv2.ocl.haveOpenCL()
+        except:
+            opencl_available = False
+        
         if model_name == "RFR":
+            # RandomForest: 使用所有CPU核心
             return RandomForestRegressor(**params, random_state=42, n_jobs=-1)
         elif model_name == "XGBoost":
-            return xgb.XGBRegressor(**params, random_state=42, n_jobs=-1, verbosity=0)
+            # XGBoost: 优先尝试GPU，否则使用并行CPU
+            try:
+                xgb_params = {**params, 'random_state': 42, 'verbosity': 0}
+                # 尝试使用GPU
+                if gpu_available:
+                    xgb_params['tree_method'] = 'hist'
+                    xgb_params['device'] = 'cuda'
+                    print("    [XGBoost] 使用 GPU CUDA 加速")
+                else:
+                    xgb_params['tree_method'] = 'hist'
+                    xgb_params['n_jobs'] = -1
+                    print(f"    [XGBoost] 使用 CPU 多线程加速 ({os.cpu_count()}核心)")
+                return xgb.XGBRegressor(**xgb_params)
+            except Exception as e:
+                # GPU不可用时fallback到CPU
+                print(f"    [XGBoost] GPU不可用，使用CPU: {e}")
+                return xgb.XGBRegressor(**params, random_state=42, n_jobs=-1, verbosity=0)
         elif model_name == "GBDT":
-            return GradientBoostingRegressor(**params, random_state=42)
+            # HistGradientBoosting支持多线程
+            return HistGradientBoostingRegressor(**params, random_state=42)
         elif model_name == "KNN":
             n_neighbors = params.pop("n_neighbors")
             weights = params.pop("weights")
