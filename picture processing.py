@@ -19,11 +19,12 @@ warnings.filterwarnings('ignore')
 
 # ===================== 全局配置参数 =====================
 BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
+DATA_DIR = os.path.join(BASE_DIR, "data")
 TIFF_IMAGE_FOLDERS = {
-    "900W": os.path.join(BASE_DIR, "900W"),
-    "1200W": os.path.join(BASE_DIR, "1200W"),
-    "1500W": os.path.join(BASE_DIR, "1500W"),
-    "1800W": os.path.join(BASE_DIR, "1800W")
+    "900W": os.path.join(DATA_DIR, "900W"),
+    "1200W": os.path.join(DATA_DIR, "1200W"),
+    "1500W": os.path.join(DATA_DIR, "1500W"),
+    "1800W": os.path.join(DATA_DIR, "1800W")
 }
 SAVE_RESULT_FOLDER = os.path.join(BASE_DIR, "analysis_output")
 REPORT_SAVE_PATH = os.path.join(BASE_DIR, "激光熔覆金相定量分析实验报告.docx")
@@ -53,6 +54,125 @@ MAG_DICT = {
     "500x": 500,
     "1000x": 1000
 }
+
+
+def parse_zeiss_xml_metadata(xml_path):
+    """
+    解析蔡司显微镜XML元数据，提取像素尺寸校准信息
+    
+    参数:
+        xml_path: XML文件路径
+    返回:
+        dict: 包含像素尺寸(μm/像素)、分辨率、视野等信息的字典
+    """
+    import xml.etree.ElementTree as ET
+    
+    if not os.path.exists(xml_path):
+        return None
+    
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        
+        # 提取所有V标签的值（按索引顺序）
+        tags = root.find('Tags')
+        if tags is None:
+            return None
+        
+        values = {}
+        for i in range(100):  # 最多读取100个标签
+            v_tag = tags.find(f'V{i}')
+            if v_tag is not None and v_tag.text:
+                values[i] = v_tag.text
+        
+        # 提取关键参数
+        metadata = {}
+        
+        # 图像分辨率 (V25=宽度, V26=高度)
+        if 25 in values and 26 in values:
+            metadata['width_pixels'] = int(values[25])
+            metadata['height_pixels'] = int(values[26])
+        
+        # 通道数 (V27)
+        if 27 in values:
+            metadata['channels'] = int(values[27])
+        
+        # X方向像素尺寸 (V29)
+        if 29 in values:
+            metadata['pixel_size_x_um'] = float(values[29])
+        
+        # Y方向像素尺寸 (V32)
+        if 32 in values:
+            metadata['pixel_size_y_um'] = float(values[32])
+        
+        # X方向视野 (V30)
+        if 30 in values:
+            metadata['fov_x_um'] = float(values[30])
+        
+        # Y方向视野 (V33)
+        if 33 in values:
+            metadata['fov_y_um'] = float(values[33])
+        
+        # 拍摄日期 (V41)
+        if 41 in values:
+            metadata['acquisition_date'] = values[41]
+        
+        # 相机型号 (V43)
+        if 43 in values:
+            metadata['camera_model'] = values[43]
+        
+        # 计算平均像素尺寸（X和Y通常相同）
+        if 'pixel_size_x_um' in metadata:
+            metadata['pixel_size_um'] = metadata.get('pixel_size_x_um', metadata.get('pixel_size_y_um', 0))
+        
+        # 计算图像面积（μm²）
+        if 'fov_x_um' in metadata and 'fov_y_um' in metadata:
+            metadata['image_area_um2'] = metadata['fov_x_um'] * metadata['fov_y_um']
+        elif 'pixel_size_um' in metadata and 'width_pixels' in metadata and 'height_pixels' in metadata:
+            metadata['image_area_um2'] = (metadata['pixel_size_um'] ** 2) * metadata['width_pixels'] * metadata['height_pixels']
+        
+        return metadata
+    
+    except Exception as e:
+        print(f"  解析XML失败: {e}")
+        return None
+
+
+def find_xml_for_tiff(tiff_path, data_base_dir=None):
+    """
+    为TIFF图像查找对应的XML元数据文件
+    
+    参数:
+        tiff_path: TIFF图像路径
+        data_base_dir: 数据根目录（可选，默认为data文件夹）
+    返回:
+        str: XML文件路径，未找到返回None
+    """
+    tiff_dir = os.path.dirname(tiff_path)
+    tiff_name = os.path.basename(tiff_path)
+    
+    # 优先在TIFF所在目录查找XML
+    xml_name = tiff_name + "_meta.xml"
+    xml_path = os.path.join(tiff_dir, xml_name)
+    
+    if os.path.exists(xml_path):
+        return xml_path
+    
+    # 如果TIFF在900W等文件夹中，检查data文件夹中是否有对应XML
+    if data_base_dir and os.path.exists(data_base_dir):
+        # 获取功率文件夹名称
+        power_folder = os.path.basename(tiff_dir)
+        xml_in_data = os.path.join(data_base_dir, power_folder, xml_name)
+        if os.path.exists(xml_in_data):
+            return xml_in_data
+    
+    # 尝试在TIFF文件名基础上查找（去除扩展名后加_meta.xml）
+    base_name = os.path.splitext(tiff_name)[0]
+    alternative_xml = os.path.join(tiff_dir, base_name + "_meta.xml")
+    if os.path.exists(alternative_xml):
+        return alternative_xml
+    
+    return None
 
 
 # ===================== 工具函数1：金相组织分割器 =====================
@@ -120,15 +240,52 @@ class MicroscopySegmenter:
 
 
 # ===================== 工具函数2：金相定量表征计算 =====================
-def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level):
+def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level, pixel_size_um=None, xml_metadata=None):
+    """
+    金相定量表征计算 - 支持XML元数据校准
+    
+    参数:
+        seg_mask: 分割掩码
+        img_name: 图像名称
+        mag_times: 放大倍数（用于显示）
+        power_level: 激光功率
+        pixel_size_um: XML校准的像素尺寸（μm/像素），如未提供则使用放大倍数估算
+        xml_metadata: XML元数据字典（可选，用于记录完整信息）
+    """
     h, w = seg_mask.shape
     total_pixel = h * w
+    
+    # 确定像素尺寸：优先使用XML校准值，否则按放大倍数估算
+    if pixel_size_um is not None and pixel_size_um > 0:
+        pixel_um_scale = pixel_size_um
+        calibration_source = "XML元数据"
+    else:
+        pixel_um_scale = mag_times / 1000.0
+        calibration_source = "放大倍数估算"
+    
     result_dict = {
         "激光功率": power_level,
         "图像名称": img_name,
         "放大倍数": mag_times,
-        "总像素": total_pixel
+        "总像素": total_pixel,
+        "像素尺寸(μm/像素)": round(pixel_um_scale, 6),
+        "校准来源": calibration_source
     }
+    
+    # 如果提供了XML元数据，记录更多详细信息
+    if xml_metadata:
+        result_dict["图像宽度(像素)"] = xml_metadata.get("width_pixels", w)
+        result_dict["图像高度(像素)"] = xml_metadata.get("height_pixels", h)
+        result_dict["通道数"] = xml_metadata.get("channels", 3)
+        result_dict["视野宽度(μm)"] = round(xml_metadata.get("fov_x_um", 0), 2)
+        result_dict["视野高度(μm)"] = round(xml_metadata.get("fov_y_um", 0), 2)
+        result_dict["视野面积(μm²)"] = round(xml_metadata.get("image_area_um2", 0), 2)
+        result_dict["相机型号"] = xml_metadata.get("camera_model", "未知")
+        result_dict["拍摄日期"] = xml_metadata.get("acquisition_date", "未知")
+    
+    # 计算物理总面积（μm²）
+    total_area_um2 = total_pixel * (pixel_um_scale ** 2)
+    result_dict["总物理面积(μm²)"] = round(total_area_um2, 2)
     
     area_sum = {}
     for cls_id, cls_name in CLASS_DICT.items():
@@ -136,11 +293,14 @@ def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level):
         area_ratio = round(cls_pixel / total_pixel * 100, 3)
         area_sum[cls_id] = cls_pixel
         result_dict[f"{cls_name}面积占比(%)"] = area_ratio
+        # 同时计算物理面积（μm²）
+        cls_area_um2 = cls_pixel * (pixel_um_scale ** 2)
+        result_dict[f"{cls_name}物理面积(μm²)"] = round(cls_area_um2, 2)
     
     result_dict["气孔孔隙率(%)"] = result_dict.get("气孔缺陷面积占比(%)", 0)
     result_dict["微裂纹面积占比(%)"] = result_dict.get("裂纹缺陷面积占比(%)", 0)
     
-    # 使用OpenCV计算晶粒尺寸（替代scikit-image的regionprops）
+    # 使用OpenCV计算晶粒尺寸（使用真实像素尺寸）
     cladding_mask = (seg_mask == 1).astype(np.uint8)
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(cladding_mask, connectivity=8)
     # stats[:, cv2.CC_STAT_AREA] 是每个区域的面积，跳过背景(索引0)
@@ -148,11 +308,15 @@ def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level):
     
     if len(grain_area_list) > 0:
         avg_grain_pixel = np.mean(grain_area_list)
-        pixel_um_scale = mag_times / 1000
-        avg_grain_size_um = round(np.sqrt(avg_grain_pixel) * pixel_um_scale, 2)
-        result_dict["熔覆层平均晶粒尺寸(μm)"] = avg_grain_size_um
+        # 使用真实像素尺寸计算晶粒物理尺寸（μm）
+        # 假设晶粒近似圆形，面积 = π * r²，直径 = 2 * √(面积/π)
+        avg_grain_area_um2 = avg_grain_pixel * (pixel_um_scale ** 2)
+        avg_grain_diameter_um = round(2 * np.sqrt(avg_grain_area_um2 / np.pi), 2)
+        result_dict["熔覆层平均晶粒尺寸(μm)"] = avg_grain_diameter_um
+        result_dict["熔覆层平均晶粒面积(μm²)"] = round(avg_grain_area_um2, 2)
     else:
         result_dict["熔覆层平均晶粒尺寸(μm)"] = 0
+        result_dict["熔覆层平均晶粒面积(μm²)"] = 0
     
     substrate_area = area_sum.get(0, 0)
     cladding_area = area_sum.get(1, 0)
@@ -379,10 +543,30 @@ def main():
             
             current_mag = parse_magnification(tiff_name)
             
+            # 查找并解析XML元数据
+            data_base_dir = os.path.join(BASE_DIR, "data")
+            xml_path = find_xml_for_tiff(tiff_path, data_base_dir=data_base_dir)
+            xml_metadata = None
+            pixel_size_um = None
+            
+            if xml_path:
+                xml_metadata = parse_zeiss_xml_metadata(xml_path)
+                if xml_metadata:
+                    pixel_size_um = xml_metadata.get('pixel_size_um')
+                    if pixel_size_um:
+                        tqdm.write(f"    ✓ XML校准: 像素尺寸={pixel_size_um:.4f}μm/像素, 视野={xml_metadata.get('fov_x_um', 0):.1f}×{xml_metadata.get('fov_y_um', 0):.1f}μm")
+                    else:
+                        tqdm.write(f"    ⚠ XML解析成功但未找到像素尺寸，使用放大倍数估算")
+                else:
+                    tqdm.write(f"    ⚠ XML解析失败，使用放大倍数估算")
+            else:
+                tqdm.write(f"    ⚠ 未找到XML元数据，使用放大倍数估算")
+            
             seg_mask = segmenter.predict_segment(ori_img)
             
             quant_data, _ = calculate_quantitative_data(
-                seg_mask, tiff_name, current_mag, power_level
+                seg_mask, tiff_name, current_mag, power_level, 
+                pixel_size_um=pixel_size_um, xml_metadata=xml_metadata
             )
             all_quant_result.append(quant_data)
             
