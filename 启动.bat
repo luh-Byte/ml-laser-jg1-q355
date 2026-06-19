@@ -25,15 +25,25 @@ if errorlevel 1 (
     echo 依赖安装完成
 )
 
-:: 启动Streamlit
+:: 启动Streamlit（在新窗口中后台运行）
 echo [3/3] 启动Web界面...
 echo.
 echo 系统启动中，请稍候...
-echo 浏览器将自动打开 http://localhost:8501
 echo.
-echo 按 Ctrl+C 可停止服务
+
+start "Streamlit Server" cmd /c ".venv\Scripts\streamlit.exe run streamlit_app.py --server.port 8501"
+
+timeout /t 5 /nobreak >nul
+
+echo 正在打开浏览器...
+start http://localhost:8501
+
+echo.
 echo ============================================
-
-.venv\Scripts\streamlit.exe run streamlit_app.py --server.port 8501
-
-pause
+echo  服务已启动！
+echo  本地地址: http://localhost:8501
+echo  浏览器已自动打开
+echo ============================================
+echo.
+echo 按任意键关闭此窗口（服务仍在后台运行）
+pause >nul
