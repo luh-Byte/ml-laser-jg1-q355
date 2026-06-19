@@ -492,13 +492,14 @@ class RegressionModels:
     支持 Bayesian 超参数寻优（基于Optuna）
     """
     
-    def __init__(self, target_col=None):
+    def __init__(self, target_col=None, progress_callback=None):
         self.target_col = target_col or "预测显微硬度(HV)"
         self.models = {}
         self.scalers = {}
         self.best_params = {}
         self.feature_names = []
         self.optuna_studies = {}  # 存储optuna研究对象，用于绘图
+        self.progress_callback = progress_callback  # 进度回调函数
         
         # 基础特征列（与 calculate_quantitative_data 输出对应）
         # 注意：实际列名以CSV文件中的为准
@@ -661,8 +662,11 @@ class RegressionModels:
         
         model_names = ["RFR", "XGBoost", "GBDT", "KNN"]
         
-        for name in model_names:
+        for idx, name in enumerate(model_names):
             print(f"\n训练模型: {name}")
+            
+            if self.progress_callback:
+                self.progress_callback(1, 0.3 + idx * 0.1, f"正在训练{name}模型...")
             
             if optimize and name != "KNN":
                 best_params = self.bayesian_optimize(name, X_scaled, y, n_trials=n_trials)
@@ -2152,7 +2156,7 @@ def run_ml_pipeline(csv_path=None, quant_df=None, progress_callback=None):
     print("\n[1/4] 训练集成回归模型 (RFR/XGBoost/GBDT/KNN) + Bayesian优化...")
     if progress_callback:
         progress_callback(1, 0.1, "正在加载数据...")
-    reg_models = RegressionModels(target_col="预测显微硬度(HV)")
+    reg_models = RegressionModels(target_col="预测显微硬度(HV)", progress_callback=progress_callback)
     if progress_callback:
         progress_callback(1, 0.3, "正在训练RFR模型...")
     reg_models.train_all_models(quant_df, optimize=True, n_trials=20)

@@ -8,11 +8,16 @@ import os
 import sys
 import pandas as pd
 import numpy as np
+import threading
 
 # 设置matplotlib后端（在streamlit中不需要Agg）
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+# ===================== 全局停止标志 =====================
+stop_training_event = threading.Event()
+stop_training_event.clear()
 
 # 页面配置
 st.set_page_config(
@@ -491,36 +496,61 @@ def main():
     
     # ML模型训练
     st.sidebar.subheader("2. ML模型训练")
-    train_models = st.sidebar.button("🚀 训练/加载模型", type="primary")
     
     # 初始化session state
     if 'ml_results' not in st.session_state:
         st.session_state.ml_results = None
     if 'pp_module' not in st.session_state:
         st.session_state.pp_module = None
+    if 'is_training' not in st.session_state:
+        st.session_state.is_training = False
+    
+    # 停止按钮
+    if st.sidebar.button("⏹ 停止训练", type="secondary", disabled=not st.session_state.is_training):
+        stop_training_event.set()
+        st.sidebar.warning("正在停止训练...")
+    
+    # 训练按钮
+    train_models = st.sidebar.button("🚀 训练/加载模型", type="primary", disabled=st.session_state.is_training)
     
     if train_models and df is not None:
+        st.session_state.is_training = True
+        stop_training_event.clear()
+        
         # 创建进度条和状态文本
         progress_bar = st.sidebar.progress(0)
         status_text = st.sidebar.empty()
         
         def progress_callback(stage, progress, message):
             """进度回调函数"""
+            if stop_training_event.is_set():
+                raise KeyboardInterrupt("用户手动停止训练")
             overall_progress = (stage - 1) * 0.25 + progress * 0.25
             progress_bar.progress(overall_progress)
             status_text.text(f"[{stage}/4] {message}")
         
-        with st.spinner("正在训练ML模型，请稍候..."):
-            results, pp = load_ml_pipeline(csv_path, _progress_callback=progress_callback)
-            if results:
-                st.session_state.ml_results = results
-                st.session_state.pp_module = pp
-                progress_bar.progress(100)
-                status_text.text("训练完成！")
-                st.sidebar.success("✅ 模型训练完成！")
-            else:
-                progress_bar.progress(0)
-                status_text.text("训练失败")
+        try:
+            with st.spinner("正在训练ML模型，请稍候..."):
+                results, pp = load_ml_pipeline(csv_path, _progress_callback=progress_callback)
+                if results:
+                    st.session_state.ml_results = results
+                    st.session_state.pp_module = pp
+                    progress_bar.progress(100)
+                    status_text.text("训练完成！")
+                    st.sidebar.success("✅ 模型训练完成！")
+                else:
+                    progress_bar.progress(0)
+                    status_text.text("训练失败")
+        except KeyboardInterrupt:
+            progress_bar.progress(0)
+            status_text.text("训练已停止")
+            st.sidebar.warning("⚠️ 训练已手动停止")
+        except Exception as e:
+            progress_bar.progress(0)
+            status_text.text("训练出错")
+            st.sidebar.error(f"训练出错: {e}")
+        finally:
+            st.session_state.is_training = False
     elif st.session_state.ml_results is None and df is not None:
         st.sidebar.info("点击按钮训练模型")
     
