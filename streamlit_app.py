@@ -50,6 +50,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+# 缓存管理模块
+from cache_manager import (
+    get_statistics, format_size,
+    clean_all_cache, clean_output_items,
+    backup_current_results, create_results_folder,
+    RESULTS_DIR
+)
+
 # 设置matplotlib后端（在streamlit中不需要Agg）
 import matplotlib
 matplotlib.use('Agg')
@@ -166,7 +174,6 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
             print("发现有效缓存，从本地加载模型...")
             reg_models, eval_report, shap_values = load_models_from_cache()
             if reg_models is not None:
-                # 构建results字典
                 results = {
                     'reg_models': reg_models,
                     'eval_report': eval_report,
@@ -181,7 +188,6 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
         results = pp.run_ml_pipeline(csv_path=csv_path, progress_callback=_progress_callback)
         
         if results:
-            # 保存模型到缓存
             reg_models = results.get('reg_models')
             eval_report = results.get('eval_report')
             shap_values = results.get('shap_values')
@@ -191,8 +197,12 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
                 print("模型已保存到缓存")
         
         return results, pp
+    
     except Exception as e:
-        st.error(f"ML流程加载失败: {e}")
+        import traceback
+        error_msg = f"ML流程加载失败: {str(e)}"
+        print(f"错误详情: {traceback.format_exc()}")
+        # 返回None以便调用者优雅处理
         return None, None
 
 @st.cache_data
@@ -593,6 +603,85 @@ def main():
             st.session_state.is_training = False
     elif st.session_state.ml_results is None and df is not None:
         st.sidebar.info("点击按钮训练模型")
+    
+    # ===================== 缓存管理与结果输出 =====================
+    st.sidebar.subheader("🔄 缓存管理")
+    
+    # 显示缓存统计
+    with st.sidebar.expander("📊 查看缓存状态", expanded=False):
+        stats = get_statistics()
+        st.write(f"**缓存项数量**: {stats['cache_count']}")
+        st.write(f"**缓存总大小**: {stats['cache_size_formatted']}")
+        st.write(f"**输出文件数量**: {stats['output_count']}")
+        st.write(f"**输出总大小**: {stats['output_size_formatted']}")
+        
+        if stats['cache_items']:
+            st.write("**缓存项详情**:")
+            for item in stats['cache_items']:
+                st.text(f"  • {item['name']}: {format_size(item['size'])}")
+    
+    # 备份当前结果
+    if st.sidebar.button("💾 备份当前结果", type="secondary"):
+        with st.spinner("正在备份..."):
+            success, msg = backup_current_results()
+            if success:
+                st.sidebar.success(msg)
+            else:
+                st.sidebar.error(f"备份失败: {msg}")
+    
+    # 清理选项
+    clean_options = st.sidebar.multiselect(
+        "🗑️ 选择要清理的内容",
+        ["模型缓存", "输出图表(.png)", "输出报告(.txt)", "输出数据(.csv)", "全部清理"],
+        default=[]
+    )
+    
+    if st.sidebar.button("🗑️ 执行清理", type="secondary", disabled=len(clean_options) == 0):
+        results = []
+        
+        if "模型缓存" in clean_options:
+            cache_results = clean_all_cache()
+            results.extend([f"缓存: {r[0]} - {r[2]}" for r in cache_results])
+        
+        if "输出图表(.png)" in clean_options:
+            png_results = clean_output_items(['*.png'])
+            results.extend([f"图表: {r[0]} - {r[2]}" for r in png_results])
+        
+        if "输出报告(.txt)" in clean_options:
+            txt_results = clean_output_items(['*.txt'])
+            results.extend([f"报告: {r[0]} - {r[2]}" for r in txt_results])
+        
+        if "输出数据(.csv)" in clean_options:
+            csv_results = clean_output_items(['*.csv'])
+            results.extend([f"数据: {r[0]} - {r[2]}" for r in csv_results])
+        
+        if "全部清理" in clean_options:
+            cache_results = clean_all_cache()
+            results.extend([f"缓存: {r[0]} - {r[2]}" for r in cache_results])
+            all_results = clean_output_items()
+            results.extend([f"{r[0]} - {r[2]}" for r in all_results])
+        
+        st.sidebar.success(f"清理完成！共清理 {len(results)} 项")
+        # 强制刷新页面以反映变化
+        st.rerun()
+    
+    # 创建新的结果文件夹
+    if st.sidebar.button("📁 新建结果文件夹", type="secondary"):
+        success, msg = create_results_folder()
+        if success:
+            st.sidebar.success(f"已创建: {msg}")
+        else:
+            st.sidebar.error(f"创建失败: {msg}")
+    
+    # 查看历史结果
+    results_base = os.path.join(BASE_DIR, "analysis_output", "results_by_date")
+    if os.path.exists(results_base):
+        with st.sidebar.expander("📂 历史结果文件夹", expanded=False):
+            for folder in sorted(os.listdir(results_base), reverse=True)[:5]:
+                folder_path = os.path.join(results_base, folder)
+                if os.path.isdir(folder_path):
+                    file_count = len([f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))])
+                    st.text(f"📁 {folder} ({file_count} 文件)")
     
     # 图表选择
     st.sidebar.subheader("3. 图表生成")

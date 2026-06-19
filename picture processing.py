@@ -375,15 +375,43 @@ def predict_mechanical_prop(quant_data):
     porosity = quant_data.get("气孔孔隙率(%)", 0)
     carbide_ratio = quant_data.get("析出相/碳化物面积占比(%)", 0)
     dilution = quant_data.get("基体稀释率(%)", 0)
-    
-    hardness = 620 - 18.2 * grain + 4.5 * carbide_ratio - 22.5 * porosity
-    tensile_strength = 780 - 12.6 * grain + 3.2 * carbide_ratio - 35 * porosity
-    wear_rate = 0.002 + 0.0008 * grain + 0.0012 * porosity - 0.0001 * carbide_ratio
-    
+    # 物理机制修正：Hall-Petch (晶粒细化强化) + 沉淀强化近似
+    # Hall-Petch: 强度/硬度贡献 ~ k / sqrt(d)
+    # 沉淀强化（近似）：与析出相体积分数或面积占比的平方根相关（Orowan 近似替代）
+    # 对空隙/气孔给出削弱项
+    # 边界与数值稳定性保护
+    grain_um = max(grain, 0.1)  # 避免除以零
+    carbide_frac = max(carbide_ratio / 100.0, 0.0)  # 转为 0-1
+    porosity_frac = max(porosity / 100.0, 0.0)
+
+    # 基础硬度（经验常数，可根据实验标定）
+    H0 = 300.0
+    k_hp = 80.0  # Hall-Petch 系数（经验值）
+    k_precip = 180.0  # 沉淀强化系数（经验值）
+    k_por = 200.0  # 孔隙削弱系数（经验值）
+
+    hardness = H0 + k_hp / np.sqrt(grain_um) + k_precip * np.sqrt(carbide_frac) - k_por * porosity_frac
+
+    # 抗拉强度使用类似的物理项做近似（保持与硬度一致的趋势）
+    TS0 = 600.0
+    ts_k_hp = 150.0
+    ts_k_precip = 250.0
+    ts_k_por = 400.0
+    tensile_strength = TS0 + ts_k_hp / np.sqrt(grain_um) + ts_k_precip * np.sqrt(carbide_frac) - ts_k_por * porosity_frac
+
+    # 磨损速率与硬度反相关（硬度越高，磨损率越低），做简单倒数近似
+    base_wear = 0.005
+    wear_rate = base_wear * (1.0 / (1.0 + (hardness - H0) / 100.0))
+
+    # 保证数值在合理范围：硬度 300-800 HV；抗拉强度不低于 300 MPa；磨损率为正
+    hardness = float(np.clip(hardness, 300.0, 800.0))
+    tensile_strength = float(max(tensile_strength, 300.0))
+    wear_rate = float(max(wear_rate, 1e-6))
+
     mech_result = {
-        "预测显微硬度(HV)": round(max(hardness, 180), 1),
-        "预测抗拉强度(MPa)": round(max(tensile_strength, 300), 1),
-        "预测磨损速率(mg/h)": round(max(wear_rate, 0.0001), 5)
+        "预测显微硬度(HV)": round(hardness, 1),
+        "预测抗拉强度(MPa)": round(tensile_strength, 1),
+        "预测磨损速率(mg/h)": round(wear_rate, 6)
     }
     return mech_result
 
@@ -784,7 +812,9 @@ class RegressionModels:
                 "subsample": (0.5, 1.0),
                 "colsample_bytree": (0.5, 1.0),
                 "reg_alpha": (0, 1),
-                "reg_lambda": (0, 1)
+                "reg_lambda": (0, 1),
+                "min_child_weight": (1, 10),
+                "gamma": (0.0, 5.0)
             }
         elif model_name == "GBDT":
             return {
@@ -915,6 +945,23 @@ class RegressionModels:
         scaler = RobustScaler()
         X_scaled = scaler.fit_transform(X)
         self.scalers["default"] = scaler
+
+        # 数据泄露 / 高相关性检查：若某个特征与目标高度线性相关，发出警告
+        try:
+            if y is not None:
+                y_series = pd.Series(y)
+                high_corr_features = []
+                for f in self.feature_names:
+                    if f in X.columns:
+                        corr = X[f].corr(y_series)
+                        if pd.notna(corr) and abs(corr) > 0.95:
+                            high_corr_features.append((f, corr))
+                if high_corr_features:
+                    print("  数据警告: 发现与目标高度相关的特征(可能导致泄露或过拟合)：")
+                    for f, c in high_corr_features:
+                        print(f"    - {f}: 相关系数={c:.4f}")
+        except Exception:
+            pass
         
         model_names = ["RFR", "XGBoost", "GBDT", "KNN"]
         
@@ -933,22 +980,39 @@ class RegressionModels:
                 if name == "RFR":
                     best_params = {"n_estimators": 100, "max_depth": 10, "min_samples_split": 5, "min_samples_leaf": 2, "max_features": 0.8}
                 elif name == "XGBoost":
-                    best_params = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1, "subsample": 0.8, "colsample_bytree": 0.8, "reg_alpha": 0.1, "reg_lambda": 0.1}
+                    best_params = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1, "subsample": 0.8, "colsample_bytree": 0.8, "reg_alpha": 0.1, "reg_lambda": 0.1, "min_child_weight": 1, "gamma": 0.0}
                 elif name == "GBDT":
                     best_params = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1, "subsample": 0.8, "min_samples_leaf": 5}
                 elif name == "KNN":
                     best_params = {"n_neighbors": 5, "weights": "distance", "p": 2}
-            
+            # 创建模型实例
             model = self._create_model(name, best_params.copy())
+
+            # 使用 K-Fold 交叉验证评估模型稳定性，避免过拟合的单次训练评估
+            kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+            try:
+                cv_r2 = cross_val_score(model, X_scaled, y, cv=kfold, scoring='r2')
+                cv_mae = -cross_val_score(model, X_scaled, y, cv=kfold, scoring='neg_mean_absolute_error')
+                cv_mse = -cross_val_score(model, X_scaled, y, cv=kfold, scoring='neg_mean_squared_error')
+                cv_rmse = np.sqrt(cv_mse)
+
+                print(f"  {name} CV 平均 - R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}, MAE: {cv_mae.mean():.4f}, RMSE: {cv_rmse.mean():.4f}")
+            except Exception as e:
+                print(f"  CV 评估失败 ({e})，将继续在全量数据上训练并评估训练集性能")
+
+            # 在全量数据上拟合以便后续预测/可解释性分析
             model.fit(X_scaled, y)
             self.models[name] = model
-            
-            # 评估
-            y_pred = model.predict(X_scaled)
-            r2 = r2_score(y, y_pred)
-            mae = mean_absolute_error(y, y_pred)
-            rmse = np.sqrt(mean_squared_error(y, y_pred))
-            print(f"  {name} 训练集 - R²: {r2:.4f}, MAE: {mae:.4f}, RMSE: {rmse:.4f}")
+
+            # 训练集评估（供参考，但不要以此作为泛化性能判断）
+            try:
+                y_pred = model.predict(X_scaled)
+                r2 = r2_score(y, y_pred)
+                mae = mean_absolute_error(y, y_pred)
+                rmse = np.sqrt(mean_squared_error(y, y_pred))
+                print(f"  {name} 训练集 - R²: {r2:.4f}, MAE: {mae:.4f}, RMSE: {rmse:.4f}")
+            except Exception:
+                pass
         
         print("\n所有回归模型训练完成！")
     
