@@ -618,7 +618,7 @@ def main():
         
         print(f"\n处理 {power_level} 功率组...")
         
-        power_output_dir = os.path.join(SAVE_RESULT_FOLDER, "segment_label_img", power_level)
+        power_output_dir = os.path.join(SAVE_RESULT_FOLDER, "figures", "segmentation", power_level)
         os.makedirs(power_output_dir, exist_ok=True)
         
         tiff_files = [f for f in os.listdir(folder_path) 
@@ -711,7 +711,7 @@ def main():
         except ImportError:
             print("提示: openpyxl未安装，仅保存CSV格式")
         
-        seg_img_dir = os.path.join(SAVE_RESULT_FOLDER, "segment_label_img")
+        seg_img_dir = os.path.join(SAVE_RESULT_FOLDER, "figures", "segmentation")
         generate_word_report(quant_df, all_mech_result, seg_img_dir, REPORT_SAVE_PATH)
         
         print("\n" + "=" * 60)

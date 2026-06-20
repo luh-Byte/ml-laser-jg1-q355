@@ -78,9 +78,11 @@ st.set_page_config(
 # 常量
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_RESULT_FOLDER = os.path.join(BASE_DIR, "analysis_output")
+FIG_DIR = os.path.join(SAVE_RESULT_FOLDER, "figures")
 
 # 确保输出目录存在
 os.makedirs(SAVE_RESULT_FOLDER, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(os.path.join(SAVE_RESULT_FOLDER, "ml_results"), exist_ok=True)
 
 # ===================== 模型缓存路径 =====================
@@ -239,7 +241,7 @@ def plot_pearson_correlation(quant_df, feature_names, target_col):
     plt.tight_layout()
     
     # 保存
-    path = os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.png")
+    path = os.path.join(FIG_DIR, "pearson_correlation_matrix.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     

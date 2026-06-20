@@ -27,7 +27,9 @@ import pickle
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
+FIG_DIR = os.path.join(OUTPUT_DIR, "figures")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -158,7 +160,7 @@ def shap_analysis(model, X, feature_names):
         shap.summary_plot(shap_values, X, feature_names=feature_names,
                           show=False, max_display=15)
         plt.tight_layout()
-        path = os.path.join(OUTPUT_DIR, "shap_feature_importance.png")
+        path = os.path.join(FIG_DIR, "shap_feature_importance.png")
         plt.savefig(path, dpi=150, bbox_inches="tight")
         plt.close()
         print(f"  [OK] {path}")
@@ -209,7 +211,7 @@ def plot_partial_dependence(model, X, feature_names, df, target):
 
     plt.suptitle("Partial Dependence Plots (GBR)", fontsize=13, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "partial_dependence_plots.png")
+    path = os.path.join(FIG_DIR, "partial_dependence_plots.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")
@@ -268,7 +270,7 @@ def plot_model_comparison(results, y, df):
 
     plt.suptitle("Property Model Comparison (Real Measured Hardness)", fontsize=13, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "property_model_comparison.png")
+    path = os.path.join(FIG_DIR, "property_model_comparison.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")
@@ -332,7 +334,7 @@ def sensitivity_analysis(results, df, features, target):
                label=f"Optimal: {power_range[opt_idx]}W → {hardness_pred[opt_idx]:.0f} HV")
     ax.legend(fontsize=10)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "power_sensitivity_analysis.png")
+    path = os.path.join(FIG_DIR, "power_sensitivity_analysis.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")

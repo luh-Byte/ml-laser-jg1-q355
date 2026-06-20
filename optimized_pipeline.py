@@ -25,7 +25,9 @@ import pickle
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
+FIG_DIR = os.path.join(OUTPUT_DIR, "figures")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -194,7 +196,7 @@ def plot_sensitivity(sens_df, base_power=1350):
 
     plt.suptitle(f"Power Sensitivity Analysis (Base: {base_power}W)", fontsize=13, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "power_sensitivity_detailed.png")
+    path = os.path.join(FIG_DIR, "power_sensitivity_detailed.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")
@@ -248,7 +250,7 @@ def plot_pareto(pareto_front):
 
     plt.suptitle("Multi-Objective Optimization Results", fontsize=13, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "pareto_optimization.png")
+    path = os.path.join(FIG_DIR, "pareto_optimization.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")

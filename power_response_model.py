@@ -25,7 +25,9 @@ from scipy.optimize import minimize
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
+FIG_DIR = os.path.join(OUTPUT_DIR, "figures")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(FIG_DIR, exist_ok=True)
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -135,7 +137,7 @@ def plot_power_response(df, results):
 
     plt.suptitle("Power → Microstructure Response Surface (GPR)", fontsize=14, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "power_response_surface.png")
+    path = os.path.join(FIG_DIR, "power_response_surface.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")
@@ -268,7 +270,7 @@ def plot_calibration(df, cal_result):
 
     plt.suptitle("Physics Model Calibration Results", fontsize=14, y=1.02)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "physics_model_calibration.png")
+    path = os.path.join(FIG_DIR, "physics_model_calibration.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")
@@ -343,7 +345,7 @@ def build_power_property_direct(df):
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "power_hardness_direct_gpr.png")
+    path = os.path.join(FIG_DIR, "power_hardness_direct_gpr.png")
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  [OK] {path}")

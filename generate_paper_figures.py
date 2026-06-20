@@ -27,7 +27,7 @@ plt.rcParams['figure.dpi'] = 300
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "analysis_output")
-FIG_DIR = os.path.join(DATA_DIR, "paper_figures")
+FIG_DIR = os.path.join(DATA_DIR, "figures", "paper")
 os.makedirs(FIG_DIR, exist_ok=True)
 
 # 高质量配色
@@ -474,7 +474,7 @@ def plot_segmentation_comparison():
             axes[0, idx].set_title(f'{pw} Original', fontsize=11, fontweight='bold')
             axes[0, idx].axis('off')
             
-            seg_dir = os.path.join(DATA_DIR, "segment_label_img", pw)
+            seg_dir = os.path.join(DATA_DIR, "figures", "segmentation", pw)
             seg_files = [f for f in os.listdir(seg_dir) if '50x_seg' in f] if os.path.exists(seg_dir) else []
             if seg_files:
                 seg_img = Image.open(os.path.join(seg_dir, seg_files[0]))
