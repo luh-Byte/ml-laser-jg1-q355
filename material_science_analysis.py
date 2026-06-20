@@ -14,7 +14,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 # 读取数据
-BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_RESULT_FOLDER = os.path.join(BASE_DIR, "analysis_output")
 csv_path = os.path.join(SAVE_RESULT_FOLDER, "金相定量表征数据汇总.csv")
 df = pd.read_csv(csv_path)

@@ -76,7 +76,7 @@ st.set_page_config(
 )
 
 # 常量
-BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_RESULT_FOLDER = os.path.join(BASE_DIR, "analysis_output")
 
 # 确保输出目录存在
@@ -159,7 +159,6 @@ def update_data_hash(csv_path):
         pass
 
 # ===================== 缓存的数据和模型 =====================
-@st.cache_resource
 def load_ml_pipeline(csv_path=None, _progress_callback=None):
     """智能加载ML管道：优先从缓存加载，缓存无效时重新训练"""
     try:
@@ -682,6 +681,59 @@ def main():
                 if os.path.isdir(folder_path):
                     file_count = len([f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))])
                     st.text(f"📁 {folder} ({file_count} 文件)")
+    
+    # ===================== micro_sam 显微图像预训练模型 =====================
+    st.sidebar.subheader("🔬 micro_sam 预训练模型")
+    
+    # 导入 micro_sam 集成模块
+    try:
+        from microsam_integration import (
+            check_micro_sam_installed, 
+            get_available_models,
+            MicroSAMSegmenter,
+            install_micro_sam_instructions
+        )
+        
+        installed = check_micro_sam_installed()
+        
+        if not installed:
+            st.sidebar.warning("⚠️ 未安装")
+            with st.sidebar.expander("安装说明"):
+                st.code(install_micro_sam_instructions(), language="python")
+        else:
+            st.sidebar.success("✅ 已安装")
+            
+            # 模型选择
+            model_type = st.sidebar.selectbox(
+                "模型类型",
+                options=list(get_available_models().keys()),
+                format_func=lambda x: get_available_models()[x],
+                index=2,
+                key="microsam_model"
+            )
+            
+            # 设备选择
+            device = st.sidebar.radio(
+                "计算设备",
+                ["auto", "cpu", "cuda"],
+                format_func=lambda x: {"auto": "自动", "cpu": "CPU", "cuda": "GPU"}[x],
+                index=0,
+                key="microsam_device"
+            )
+            
+            # 加载模型按钮
+            if st.sidebar.button("加载预训练模型", key="load_micosam"):
+                with st.spinner("正在加载模型..."):
+                    segmenter = MicroSAMSegmenter(model_type=model_type, device=device)
+                    st.session_state.microsam_segmenter = segmenter
+                    st.sidebar.success(f"模型 {model_type} 已加载")
+            
+            # 显示模型状态
+            if 'microsam_segmenter' in st.session_state:
+                st.sidebar.info(f"当前模型: {st.session_state.microsam_segmenter.model_type}")
+                
+    except ImportError as e:
+        st.sidebar.warning(f"模块导入失败: {e}")
     
     # 图表选择
     st.sidebar.subheader("3. 图表生成")

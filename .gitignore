@@ -3,24 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+dist/
+build/
+.eggs/
 
-# Virtual environments
+# Virtual Environment
 .venv/
 venv/
 ENV/
@@ -30,22 +19,37 @@ ENV/
 .vscode/
 *.swp
 *.swo
-
-# Output files (keep analysis results)
-# analysis_output/  # 取消注释如果想忽略输出文件夹
-mlruns/
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Large data files
-*.tiff
-*.tif
-*.png
-*.jpg
-*.jpeg
-!analysis_output/*.png
+# Data & Output (large files)
+analysis_output/
+data/
+*.rar
+*.zip
+*.pdf
+*.docx
+
+# Model Cache
+*.pkl
+*.joblib
+*.pt
+*.pth
+
+# Logs
+*.log
+
+# Cache
+chat_memory/
+knowledge_base/chroma_db/
+__pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Poetry
+!poetry.lock

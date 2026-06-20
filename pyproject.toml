@@ -1,0 +1,60 @@
+[tool.poetry]
+name = "ml-laser-jg1-q355"
+version = "1.0.0"
+description = "Machine Learning-based Laser Power Optimization and Microstructure-Property Coordinated Control for JG-1 Iron-based Alloy Q355 Steel"
+authors = ["Wang Yuhang <22080740214@hebau.edu.cn>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "."}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+numpy = ">=2.0,<3.0"
+pandas = ">=2.0,<4.0"
+scikit-learn = ">=1.3,<2.0"
+scipy = ">=1.11,<2.0"
+xgboost = ">=2.0,<4.0"
+matplotlib = ">=3.7,<4.0"
+opencv-python = ">=4.8,<5.0"
+streamlit = ">=1.28,<2.0"
+shap = ">=0.42,<1.0"
+optuna = ">=3.0,<5.0"
+python-docx = ">=0.8,<2.0"
+openpyxl = ">=3.1,<4.0"
+pillow = ">=10.0,<13.0"
+torch = ">=2.0,<3.0"
+torchvision = ">=0.15,<1.0"
+pyyaml = ">=6.0,<7.0"
+tqdm = ">=4.65,<5.0"
+joblib = ">=1.3,<2.0"
+lxml = ">=4.9,<7.0"
+chromadb = "^1.5.9"
+sentence-transformers = "^5.6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0,<9.0"
+black = ">=23.0,<25.0"
+ruff = ">=0.1,<1.0"
+mypy = ">=1.5,<2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312", "py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

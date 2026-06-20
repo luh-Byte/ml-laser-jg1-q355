@@ -1,0 +1,33 @@
+# 知识库 + 对话记忆 配置文件
+
+# 嵌入模型 (本地离线运行)
+embed_model: "paraphrase-multilingual-MiniLM-L12-v2"
+
+# 知识库配置
+knowledge_base:
+  chroma_path: "knowledge_base/chroma_store"
+  raw_doc_path: "knowledge_base/raw_docs"
+  chunk_size: 512
+  chunk_overlap: 100
+  similarity_threshold: -1.0
+  retrieve_top_n: 3
+  collections:
+    - name: "laser_cladding"
+      description: "JG-1铁基合金、激光熔覆、堆焊工艺、焊接参数"
+      doc_path: "knowledge_base/raw_docs/laser_cladding"
+    - name: "metallography"
+      description: "金相图谱、图像分割、金相评级、定量分析"
+      doc_path: "knowledge_base/raw_docs/metallography"
+    - name: "material_ml"
+      description: "XGBoost/RFR/SHAP性能预测、材料机器学习建模"
+      doc_path: "knowledge_base/raw_docs/material_ml"
+    - name: "literature"
+      description: "论文文献、实验数据、对照实验"
+      doc_path: "knowledge_base/raw_docs/literature"
+
+# 对话记忆配置
+chat_memory:
+  sqlite_path: "chat_memory/session_sqlite.db"
+  max_short_round: 20
+  summary_threshold: 20
+  similarity_threshold: 0.7

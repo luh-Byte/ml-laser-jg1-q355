@@ -58,7 +58,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from tqdm import tqdm
 
 # ===================== 全局配置参数 =====================
-BASE_DIR = r"C:\Users\liuyuhe\Desktop\基于机器学习的激光功率优化及JG-1铁基合金Q355钢组织性能协同调控研究\金相图片"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 TIFF_IMAGE_FOLDERS = {
     "900W": os.path.join(DATA_DIR, "900W"),
@@ -227,54 +227,105 @@ class MicroscopySegmenter:
         return self._traditional_segment(img_array)
     
     def _traditional_segment(self, img_array):
-        """传统图像分割方法"""
+        """传统图像分割方法（优化版：去噪+划痕过滤）"""
         if len(img_array.shape) == 3:
             gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
         else:
             gray = img_array.copy()
         
         h, w = gray.shape
+        
+        gray_blur = cv2.medianBlur(gray, 5)
+        
         seg_mask = np.zeros((h, w), dtype=np.uint8)
         
-        thresh_high = np.percentile(gray, 85)
-        thresh_low = np.percentile(gray, 30)
+        thresh_high = np.percentile(gray_blur, 85)
+        thresh_low = np.percentile(gray_blur, 30)
         
-        seg_mask[(gray > thresh_low) & (gray <= thresh_high)] = 1
-        seg_mask[gray <= thresh_low] = 0
-        seg_mask[gray > thresh_high] = 2
+        seg_mask[(gray_blur > thresh_low) & (gray_blur <= thresh_high)] = 1
+        seg_mask[gray_blur <= thresh_low] = 0
+        seg_mask[gray_blur > thresh_high] = 2
         
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        dark_thresh = np.percentile(gray, 15)
-        dark_regions = (gray < dark_thresh).astype(np.uint8)
+        dark_thresh = np.percentile(gray_blur, 12)
+        dark_regions = (gray_blur < dark_thresh).astype(np.uint8)
         
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        dark_regions = cv2.morphologyEx(dark_regions, cv2.MORPH_OPEN, kernel)
-        dark_regions = cv2.morphologyEx(dark_regions, cv2.MORPH_CLOSE, kernel)
+        kernel3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        kernel5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dark_regions = cv2.morphologyEx(dark_regions, cv2.MORPH_OPEN, kernel5)
+        dark_regions = cv2.morphologyEx(dark_regions, cv2.MORPH_CLOSE, kernel3)
+        
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dark_regions, connectivity=8)
+        min_pore_area = max(50, (h * w) * 0.0001)
+        for i in range(1, num_labels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            if area < min_pore_area:
+                dark_regions[labels == i] = 0
+                continue
+            comp_mask = (labels == i).astype(np.uint8)
+            contours_comp, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours_comp:
+                cnt = contours_comp[0]
+                perimeter = cv2.arcLength(cnt, True)
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter ** 2)
+                    if circularity < 0.2:
+                        dark_regions[labels == i] = 0
         
         contours, _ = cv2.findContours(dark_regions, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > 20:
-                perimeter = cv2.arcLength(cnt, True)
-                if perimeter > 0:
-                    circularity = 4 * np.pi * area / (perimeter ** 2)
-                    if circularity > 0.5:
-                        cv2.drawContours(seg_mask, [cnt], -1, 3, -1)
+            if area > min_pore_area:
+                cv2.drawContours(seg_mask, [cnt], -1, 3, -1)
         
-        edges = cv2.Canny(gray, 50, 150)
+        edges = cv2.Canny(gray_blur, 50, 150)
         kernel_crack = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 1))
-        edges_dilated = cv2.dilate(edges, kernel_crack, iterations=2)
+        edges_dilated = cv2.dilate(edges, kernel_crack, iterations=1)
         
-        contours_crack, _ = cv2.findContours(edges_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for cnt in contours_crack:
-            area = cv2.contourArea(cnt)
-            if area > 10:
-                rect = cv2.minAreaRect(cnt)
-                width, height = rect[1]
-                if min(width, height) > 0:
-                    aspect_ratio = max(width, height) / min(width, height)
-                    if aspect_ratio > 3:
-                        cv2.drawContours(seg_mask, [cnt], -1, 4, -1)
+        num_labels_cr, labels_cr, stats_cr, centroids_cr = cv2.connectedComponentsWithStats(edges_dilated, connectivity=8)
+        min_crack_length = max(h, w) * 0.05
+        min_crack_area = max(30, (h * w) * 0.00005)
+        
+        for i in range(1, num_labels_cr):
+            area = stats_cr[i, cv2.CC_STAT_AREA]
+            if area < min_crack_area:
+                continue
+            comp_mask = (labels_cr == i).astype(np.uint8)
+            contours_cr, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours_cr:
+                continue
+            cnt = contours_cr[0]
+            rect = cv2.minAreaRect(cnt)
+            rect_w, rect_h = rect[1]
+            if min(rect_w, rect_h) < 1:
+                continue
+            aspect_ratio = max(rect_w, rect_h) / min(rect_w, rect_h)
+            if aspect_ratio < 5:
+                continue
+            long_side = max(rect_w, rect_h)
+            if long_side < min_crack_length:
+                continue
+            x, y, bw, bh = stats_cr[i, cv2.CC_STAT_LEFT], stats_cr[i, cv2.CC_STAT_TOP], stats_cr[i, cv2.CC_STAT_WIDTH], stats_cr[i, cv2.CC_STAT_HEIGHT]
+            margin = 5
+            if x < margin or y < margin or (x + bw) > (w - margin) or (y + bh) > (h - margin):
+                continue
+            cx, cy = centroids_cr[i]
+            if cx < margin or cy < margin or cx > (w - margin) or cy > (h - margin):
+                continue
+            cv2.drawContours(seg_mask, [cnt], -1, 4, -1)
+        
+        kernel_clean = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask_pore = (seg_mask == 3).astype(np.uint8)
+        mask_pore = cv2.morphologyEx(mask_pore, cv2.MORPH_OPEN, kernel_clean)
+        mask_pore = cv2.morphologyEx(mask_pore, cv2.MORPH_CLOSE, kernel_clean)
+        mask_crack = (seg_mask == 4).astype(np.uint8)
+        mask_crack = cv2.morphologyEx(mask_crack, cv2.MORPH_OPEN, kernel3)
+        
+        temp_mask = seg_mask.copy()
+        temp_mask[(seg_mask == 3) & (mask_pore == 0)] = 1
+        temp_mask[(seg_mask != 3) & (mask_pore == 1)] = 3
+        temp_mask[(seg_mask == 4) & (mask_crack == 0)] = 1
+        temp_mask[(seg_mask != 4) & (mask_crack == 1)] = 4
+        seg_mask = temp_mask
         
         return seg_mask
 
@@ -622,13 +673,13 @@ def main():
                 if xml_metadata:
                     pixel_size_um = xml_metadata.get('pixel_size_um')
                     if pixel_size_um:
-                        tqdm.write(f"    ✓ XML校准: 像素尺寸={pixel_size_um:.4f}μm/像素, 视野={xml_metadata.get('fov_x_um', 0):.1f}×{xml_metadata.get('fov_y_um', 0):.1f}μm")
+                        tqdm.write(f"    [OK] XML校准: 像素尺寸={pixel_size_um:.4f}um/像素, 视野={xml_metadata.get('fov_x_um', 0):.1f}x{xml_metadata.get('fov_y_um', 0):.1f}um")
                     else:
-                        tqdm.write(f"    ⚠ XML解析成功但未找到像素尺寸，使用放大倍数估算")
+                        tqdm.write(f"    [WARN] XML解析成功但未找到像素尺寸，使用放大倍数估算")
                 else:
-                    tqdm.write(f"    ⚠ XML解析失败，使用放大倍数估算")
+                    tqdm.write(f"    [WARN] XML解析失败，使用放大倍数估算")
             else:
-                tqdm.write(f"    ⚠ 未找到XML元数据，使用放大倍数估算")
+                tqdm.write(f"    [WARN] 未找到XML元数据，使用放大倍数估算")
             
             seg_mask = segmenter.predict_segment(ori_img)
             

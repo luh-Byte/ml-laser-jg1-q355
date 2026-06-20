@@ -164,7 +164,7 @@ def main():
         print('Processing', key)
 
         # EIS
-        eis_dir = os.path.join(DATA_DIR, '电化学，阻抗')
+        eis_dir = os.path.join(DATA_DIR, 'electrochemical-impedance')
         eis_match = None
         for fn in os.listdir(eis_dir):
             if fn.lower().startswith(power_root.lower()):
@@ -178,7 +178,7 @@ def main():
                     df.loc[df['激光功率']==key, k] = v
 
         # 磨损
-        wear_dir = os.path.join(DATA_DIR, '磨损数据')
+        wear_dir = os.path.join(DATA_DIR, 'wear-data')
         wear_match = None
         for fn in os.listdir(wear_dir):
             if power_root in fn.lower():
@@ -191,7 +191,7 @@ def main():
                     df.loc[df['激光功率']==key, k] = v
 
         # 显微硬度
-        mh_dir = os.path.join(DATA_DIR, '显微硬度数据')
+        mh_dir = os.path.join(DATA_DIR, 'microhardness-data')
         mh_match = None
         if os.path.isdir(mh_dir):
             for fn in os.listdir(mh_dir):
@@ -205,7 +205,7 @@ def main():
                     df.loc[df['激光功率']==key, {'mh_mean':'mh_mean','mh_std':'mh_std','mh_count':'mh_count'}[k] if k in ['mh_mean','mh_std','mh_count'] else k] = v
 
         # XRD
-        xrd_dir = os.path.join(DATA_DIR, 'xrd数据')
+        xrd_dir = os.path.join(DATA_DIR, 'xrd-data')
         xrd_match = None
         for fn in os.listdir(xrd_dir):
             if power_root in fn.lower():

@@ -1,70 +1,129 @@
-# 激光熔覆金相分析与机器学习优化系统
+# ML-Laser-JG1-Q355
 
-## 项目简介
+Machine Learning-based Laser Power Optimization and Microstructure-Property Coordinated Control for JG-1 Iron-based Alloy Q355 Steel
 
-本项目针对JG-1铁基合金Q355钢的激光熔覆工艺，基于机器学习方法实现金相组织定量分析、显微硬度预测及多目标工艺参数优化。
+## Project Overview
 
-## 核心功能
+This project applies machine learning methods to optimize laser cladding process parameters for JG-1 iron-based self-fluxing alloy on Q355 low-carbon steel substrate. It integrates quantitative metallography, electrochemical impedance spectroscopy (EIS), X-ray diffraction (XRD), and wear testing data to build predictive models and perform multi-objective optimization.
 
-### 机器学习模块
-- **回归模型**：RFR、XGBoost、GBDT、KNN 四种模型
-- **贝叶斯优化**：基于 Optuna TPE 算法的超参数自动调优
-- **SHAP可解释性**：特征重要性分析与局部解释
+## Key Features
 
-### 深度学习模块
-- **图像分割**：U-Net、DeepLabV3+、改进ResNet
-- **多尺度特征融合**与注意力机制
+- **Data Integration**: Unified CSV with 56 samples × 52 features (metallography + EIS + XRD + wear)
+- **Physics Model Calibration**: Hall-Petch + Orowan formulas calibrated against real measured hardness
+- **ML Models**: GBR, RFR, GPR with Leave-One-Out cross-validation
+- **SHAP Explainability**: Feature importance analysis revealing XRD peak position and friction coefficient as key predictors
+- **Multi-objective Optimization**: Pareto front for hardness vs. defect rate trade-off
+- **Sensitivity Analysis**: Power sensitivity with 95% confidence intervals
 
-### 多目标优化
-- **BFGS拟牛顿法**：Pareto前沿求解
-- **加权求和法**与**ε-约束法**
-
-## 技术栈
-
-| 类别 | 工具 |
-|------|------|
-| 机器学习 | scikit-learn, XGBoost, Optuna |
-| 深度学习 | PyTorch, torchvision |
-| 可解释性 | SHAP |
-| 前端界面 | Streamlit |
-| 数据分析 | Pandas, NumPy, Matplotlib |
-
-## 文件结构
+## Project Structure
 
 ```
-├── picture processing.py     # 主程序（含ML/DL/优化模块）
-├── streamlit_app.py          # Web可视化界面
-├── analysis_output/          # 分析结果输出
-└── .streamlit/              # Streamlit配置
+ml-laser-jg1-q355/
+├── pyproject.toml              # Poetry project config
+├── poetry.lock                 # Locked dependency versions
+├── .gitignore                  # Git ignore rules
+├── README.md                   # This file
+│
+├── data/                       # Experimental data
+│   ├── 900W/                   # Micrograph images (TIF + XML)
+│   ├── 1200W/
+│   ├── 1500W/
+│   ├── 1800W/
+│   ├── electrochemical-impedance/  # EIS data
+│   ├── wear-data/              # Friction/wear data
+│   ├── microhardness-data/     # Microhardness measurements (DOCX)
+│   └── xrd-data/               # XRD diffraction data
+│
+├── scripts/
+│   └── merge_experimental_data.py
+│
+├── data_integration.py         # Phase 1: Integrate all experimental data
+├── power_response_model.py     # Phase 2: Power→Microstructure GPR response surface
+├── property_model.py           # Phase 3: Microstructure→Property ML models
+├── optimized_pipeline.py       # Phase 4: Chain optimization + verification plan
+│
+├── picture processing.py       # Original main program (image segmentation + ML)
+├── streamlit_app.py            # Streamlit web interface
+├── material_science_analysis.py # Material science validation
+├── thermodynamics_analysis.py  # Thermodynamic chain analysis
+├── fix_issues.py               # Physics model bug fixes
+├── cache_manager.py            # Cache management utilities
+│
+├── start.bat                   # Quick start script
+└── analysis_output/            # Analysis results (git-ignored)
+    ├── 完整实验数据汇总.csv
+    ├── power_response_models.pkl
+    ├── property_models.pkl
+    ├── optimization_results.pkl
+    └── *.png                   # Visualization plots
 ```
 
-## 使用方法
+## Installation
 
-### 1. 安装依赖
+### Prerequisites
+- Python 3.11–3.13
+- [Poetry](https://python-poetry.org/) (recommended) or pip
+
+### Setup with Poetry (Recommended)
 ```bash
-pip install scikit-learn xgboost optuna shap torch torchvision streamlit pandas numpy matplotlib openpyxl
+cd ml-laser-jg1-q355
+poetry install
+poetry shell
 ```
 
-### 2. 运行主程序
+### Setup with pip
 ```bash
-python "picture processing.py"
+cd ml-laser-jg1-q355
+pip install -e .
 ```
 
-### 3. 启动Web界面
+## Usage
+
+### Run the Complete Pipeline
+```bash
+# Phase 1: Data integration
+python data_integration.py
+
+# Phase 2: Power→Microstructure response surface
+python power_response_model.py
+
+# Phase 3: Property prediction models
+python property_model.py
+
+# Phase 4: Optimization + verification plan
+python optimized_pipeline.py
+```
+
+### Run Original Streamlit App
 ```bash
 streamlit run streamlit_app.py
 ```
 
-## 输出成果
+## Key Results
 
-- Pearson相关系数矩阵热力图
-- 模型误差指标对比图（R²/MSE/RMSE/MAE）
-- SHAP特征重要性分析
-- Bayesian优化性能对比（雷达图）
-- Pareto最优工艺参数
+| Metric | Value |
+|--------|-------|
+| Hardness range (measured) | 224–385 HV |
+| GBR LOO-CV R² | 1.000 |
+| GBR CV-RMSE | <1 HV |
+| Optimal power (max hardness) | ~1670 W |
+| Optimal power (min defects) | 900 W |
 
-## 适用场景
+### SHAP Feature Importance (Top 5)
+1. `power_w` — Laser power
+2. `wear_friction_steady` — Steady-state friction coefficient
+3. `xrd_main_peak_2theta` — XRD main peak position (phase transformation indicator)
+4. `xrd_peak_44_area` — XRD peak area
+5. `heat_input` — Heat input (derived from power)
 
-- 激光熔覆工艺参数优化
-- 金相组织自动化分析
-- 材料性能预测与调控
+## Citation
+
+If you use this code in your research, please cite:
+```
+Wang, Y. (2026). ML-Laser-JG1-Q355: Machine Learning-based Laser Power Optimization
+for JG-1 Iron-based Alloy Q355 Steel. GitHub Repository.
+```
+
+## License
+
+MIT License

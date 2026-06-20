@@ -1,0 +1,3 @@
+pretrained_microscopy_models 显微图像预训练模型
+Software tools to build deep learning microscopy segmentation and analysis models with less training data. Pretrained MicroNet encoders are available for download. Leverages transfer learning from classification models trained on a large (>100,000 images) dataset of microscopy images.
+可用于在训练数据较少的情况下构建深度学习显微镜分割与分析模型的软件工具。预训练的 MicroNet 编码器可供下载。该工具利用了在包含超过10万张显微镜图像的大型数据集上训练的分类模型所进行的迁移学习。
