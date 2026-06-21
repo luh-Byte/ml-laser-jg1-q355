@@ -46,6 +46,7 @@ data/
 # Cache
 chat_memory/
 knowledge_base/chroma_db/
+knowledge_base/chroma_store/
 __pycache__/
 
 # Jupyter

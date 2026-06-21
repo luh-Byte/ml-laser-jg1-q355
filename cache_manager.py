@@ -11,8 +11,8 @@ from datetime import datetime
 # 基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
-CACHE_DIR = os.path.join(BASE_DIR, ".cache")
-MODEL_CACHE_FILE = os.path.join(CACHE_DIR, "models.pkl")
+CACHE_DIR = os.path.join(OUTPUT_DIR, "model_cache")
+MODEL_CACHE_FILE = os.path.join(CACHE_DIR, "trained_models.joblib")
 DATA_HASH_CACHE_FILE = os.path.join(CACHE_DIR, "data_hash.txt")
 
 # 结果输出子文件夹
@@ -130,6 +130,10 @@ def clean_output_items(patterns=None):
         for fpath in glob.glob(os.path.join(OUTPUT_DIR, '**', pattern), recursive=True):
             # 跳过results_by_date目录，避免误删备份结果
             if 'results_by_date' in fpath:
+                continue
+            # 跳过主数据文件，防止误删
+            basename = os.path.basename(fpath)
+            if '金相定量表征数据汇总' in basename:
                 continue
             
             try:

@@ -7,6 +7,7 @@
 """
 
 import os
+os.environ.setdefault('PYTHONUTF8', '1')
 import platform
 import warnings
 warnings.filterwarnings('ignore')
@@ -869,10 +870,9 @@ class RegressionModels:
             }
         elif model_name == "GBDT":
             return {
-                "n_estimators": (50, 500),
+                "max_iter": (50, 500),
                 "max_depth": (3, 15),
                 "learning_rate": (0.01, 0.3),
-                "subsample": (0.5, 1.0),
                 "min_samples_leaf": (2, 20)
             }
         elif model_name == "KNN":
@@ -1033,14 +1033,14 @@ class RegressionModels:
                 elif name == "XGBoost":
                     best_params = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1, "subsample": 0.8, "colsample_bytree": 0.8, "reg_alpha": 0.1, "reg_lambda": 0.1, "min_child_weight": 1, "gamma": 0.0}
                 elif name == "GBDT":
-                    best_params = {"n_estimators": 100, "max_depth": 6, "learning_rate": 0.1, "subsample": 0.8, "min_samples_leaf": 5}
+                    best_params = {"max_iter": 100, "max_depth": 6, "learning_rate": 0.1, "min_samples_leaf": 5}
                 elif name == "KNN":
                     best_params = {"n_neighbors": 5, "weights": "distance", "p": 2}
             # 创建模型实例
             model = self._create_model(name, best_params.copy())
 
             # 使用 K-Fold 交叉验证评估模型稳定性，避免过拟合的单次训练评估
-            kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+            kfold = KFold(n_splits=min(5, len(y)), shuffle=True, random_state=42)
             try:
                 cv_r2 = cross_val_score(model, X_scaled, y, cv=kfold, scoring='r2')
                 cv_mae = -cross_val_score(model, X_scaled, y, cv=kfold, scoring='neg_mean_absolute_error')
@@ -1118,10 +1118,7 @@ class RegressionModels:
         trials = study.trials
         history = {
             "trial": list(range(len(trials))),
-            "value": [t.value for t in trials],  # R²值
-            "MSE": [1 - t.value for t in trials],  # 转换为MSE
-            "RMSE": [np.sqrt(1 - t.value) for t in trials],  # 转换为RMSE
-            "MAE": [np.sqrt(1 - t.value) for t in trials]  # 近似MAE
+            "value": [t.value for t in trials],
         }
         return history
     
@@ -2152,8 +2149,8 @@ class BFQuasiNewtonOptimizer:
         y = y.reshape(-1, 1)
         
         Bs = B @ s
-        yTs = float(y.T @ s)  # 标量
-        sTBs = float(s.T @ B @ s) + 1e-10  # 标量
+        yTs = float(np.dot(y.flatten(), s.flatten()))
+        sTBs = float(np.dot(s.flatten(), (B @ s).flatten())) + 1e-10
         
         # BFGS 更新公式
         B_new = B + (y @ y.T) / yTs - (Bs @ Bs.T) / sTBs
@@ -2218,8 +2215,8 @@ class BFQuasiNewtonOptimizer:
             
             # 只有当 y 和 s 都有足够变化时才更新 Hessian
             if np.linalg.norm(s) > 1e-10 and np.linalg.norm(y) > 1e-10:
-                yTs = float(y.T @ s)
-                if abs(yTs) > 1e-10:  # 确保 y^T * s 不是零
+                yTs = float(np.dot(y, s))
+                if abs(yTs) > 1e-10:
                     B = self._update_hessian(B, s, y)
             
             x = x_new
@@ -2409,8 +2406,7 @@ class LaserProcessOptimizer:
         """
         self.models = regression_models
         self.bounds = [
-            (900, 1800),     # 激光功率
-            (50, 1000),      # 放大倍数（作为特征输入）
+            (50, 1000),      # 放大倍数
             (0, 100),        # 熔覆层组织面积占比
             (0, 50),         # 析出相面积占比
             (0, 10),         # 气孔率
@@ -2426,23 +2422,18 @@ class LaserProcessOptimizer:
         return pred.get("Ensemble", pred.get("XGBoost", 0))
     
     def predict_tensile(self, x):
-        """预测抗拉强度"""
-        # 临时切换目标
-        original_target = self.models.target_col
-        self.models.target_col = "预测抗拉强度(MPa)"
+        """预测抗拉强度（基于硬度的经验换算）"""
         features = dict(zip(self.models.feature_names, x))
         pred = self.models.predict(features)
-        self.models.target_col = original_target
-        return pred.get("Ensemble", pred.get("XGBoost", 0))
+        hardness = pred.get("Ensemble", pred.get("XGBoost", 0))
+        return hardness * 3.5
     
     def predict_wear_rate(self, x):
-        """预测磨损速率（越小越好）"""
-        original_target = self.models.target_col
-        self.models.target_col = "预测磨损速率(mg/h)"
+        """预测磨损速率（基于硬度的经验换算，越小越好）"""
         features = dict(zip(self.models.feature_names, x))
         pred = self.models.predict(features)
-        self.models.target_col = original_target
-        return pred.get("Ensemble", pred.get("XGBoost", 0))
+        hardness = pred.get("Ensemble", pred.get("XGBoost", 0))
+        return max(0.01, 100.0 / max(hardness, 1))
     
     def optimize_process(self, goal="balance", num_points=30):
         """

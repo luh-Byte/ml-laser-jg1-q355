@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 >nul
 title 激光熔覆金相分析ML系统
+set PYTHONIOENCODING=utf-8
 
 echo ============================================
 echo   激光熔覆金相分析与机器学习优化系统

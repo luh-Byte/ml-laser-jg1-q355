@@ -6,6 +6,7 @@
 """
 
 import os
+os.environ.setdefault('PYTHONUTF8', '1')
 import sys
 import platform
 import threading
@@ -178,7 +179,7 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
                 results = {
                     'reg_models': reg_models,
                     'eval_report': eval_report,
-                    'shap_values': shap_values,
+                    'shap_explainer': shap_values,
                     'from_cache': True
                 }
                 print("模型加载成功！")
@@ -191,9 +192,9 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
         if results:
             reg_models = results.get('reg_models')
             eval_report = results.get('eval_report')
-            shap_values = results.get('shap_values')
+            shap_explainer = results.get('shap_explainer')
             if reg_models is not None:
-                save_models_to_cache(reg_models, eval_report, shap_values)
+                save_models_to_cache(reg_models, eval_report, shap_explainer)
                 update_data_hash(csv_path)
                 print("模型已保存到缓存")
         
@@ -210,15 +211,19 @@ def load_ml_pipeline(csv_path=None, _progress_callback=None):
 def load_csv_data(csv_path):
     """缓存CSV数据"""
     if os.path.exists(csv_path):
-        return pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path)
+        # 去除重复列（保留第一个）
+        df = df.loc[:, ~df.columns.duplicated()]
+        return df
     return None
 
 # ===================== 图表生成函数 =====================
 def plot_pearson_correlation(quant_df, feature_names, target_col):
     """绘制Pearson相关系数矩阵"""
-    # 去除重复列
     quant_df = quant_df.loc[:, ~quant_df.columns.duplicated()]
-    numeric_cols = quant_df[feature_names + [target_col]].select_dtypes(include=[np.number]).columns
+    feature_names = list(dict.fromkeys(feature_names))
+    cols = [c for c in feature_names + [target_col] if c in quant_df.columns]
+    numeric_cols = quant_df[cols].select_dtypes(include=[np.number]).columns
     corr_matrix = quant_df[numeric_cols].corr(method='pearson')
     
     fig, ax = plt.subplots(figsize=(12, 10))
@@ -243,9 +248,7 @@ def plot_pearson_correlation(quant_df, feature_names, target_col):
     # 保存
     path = os.path.join(FIG_DIR, "pearson_correlation_matrix.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
-    # 保存CSV
     csv_path = os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.csv")
     corr_matrix.to_csv(csv_path, encoding='utf-8-sig')
     
@@ -267,7 +270,8 @@ def plot_error_metrics(reg_report):
     ax1.plot(model_names, r2_vals, color=colors[0], marker=markers[0], markersize=10, linewidth=2)
     ax1.set_ylabel('R²', fontsize=11)
     ax1.set_title('(a) R² (决定系数)', fontsize=12)
-    ax1.set_ylim(0.9, 1.01)
+    r2_min = min(r2_vals) * 0.95 if min(r2_vals) < 0.9 else 0.9
+    ax1.set_ylim(r2_min, 1.01)
     ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5)
     ax1.grid(True, alpha=0.3)
     for i, val in enumerate(r2_vals):
@@ -308,7 +312,6 @@ def plot_error_metrics(reg_report):
     
     path = os.path.join(SAVE_RESULT_FOLDER, "model_error_metrics.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
     return fig
 
@@ -411,7 +414,6 @@ def plot_bayesian_optimization_performance(reg_models, df):
     
     path = os.path.join(SAVE_RESULT_FOLDER, "bayesian_optimization_performance.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
     return fig
 
@@ -421,7 +423,6 @@ def plot_shap_importance(shap_explainer, model_name="XGBoost"):
     path = os.path.join(SAVE_RESULT_FOLDER, "shap_importance.png")
     if fig is not None:
         fig.savefig(path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
     return fig
 
 def plot_model_prediction_results(reg_models, df):
@@ -473,7 +474,6 @@ def plot_model_prediction_results(reg_models, df):
     
     path = os.path.join(SAVE_RESULT_FOLDER, "model_prediction_results.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
     return fig
 
@@ -497,7 +497,6 @@ def plot_pareto_front(process_optimizer):
     plt.tight_layout()
     path = os.path.join(SAVE_RESULT_FOLDER, "pareto_front.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
     return fig
 
@@ -520,7 +519,6 @@ def plot_optimization_history(process_optimizer):
     plt.tight_layout()
     path = os.path.join(SAVE_RESULT_FOLDER, "optimization_history.png")
     fig.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
     
     return fig
 
@@ -786,17 +784,13 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                st.download_button(
-                    "下载图片",
-                    open(os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.png"), "rb"),
-                    "pearson_correlation_matrix.png"
-                )
+                img_path = os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.png")
+                if os.path.exists(img_path):
+                    st.download_button("下载图片", open(img_path, "rb").read(), "pearson_correlation_matrix.png")
             with col2:
-                st.download_button(
-                    "下载CSV",
-                    open(os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.csv"), "rb"),
-                    "pearson_correlation_matrix.csv"
-                )
+                csv_path_dl = os.path.join(SAVE_RESULT_FOLDER, "pearson_correlation_matrix.csv")
+                if os.path.exists(csv_path_dl):
+                    st.download_button("下载CSV", open(csv_path_dl, "rb").read(), "pearson_correlation_matrix.csv")
         
         elif chart_type == "模型误差指标对比":
             st.header("📊 四种模型误差指标对比")
@@ -808,11 +802,9 @@ def main():
             st.subheader("详细数据")
             st.dataframe(eval_report, use_container_width=True)
             
-            st.download_button(
-                "下载图片",
-                open(os.path.join(SAVE_RESULT_FOLDER, "model_error_metrics.png"), "rb"),
-                "model_error_metrics.png"
-            )
+            img_path = os.path.join(SAVE_RESULT_FOLDER, "model_error_metrics.png")
+            if os.path.exists(img_path):
+                st.download_button("下载图片", open(img_path, "rb").read(), "model_error_metrics.png")
         
         elif chart_type == "ML模型预测结果":
             st.header("📊 ML模型预测结果")
@@ -821,11 +813,9 @@ def main():
             fig = plot_model_prediction_results(reg_models, df)
             st.pyplot(fig)
             
-            st.download_button(
-                "下载图片",
-                open(os.path.join(SAVE_RESULT_FOLDER, "model_prediction_results.png"), "rb"),
-                "model_prediction_results.png"
-            )
+            img_path = os.path.join(SAVE_RESULT_FOLDER, "model_prediction_results.png")
+            if os.path.exists(img_path):
+                st.download_button("下载图片", open(img_path, "rb").read(), "model_prediction_results.png")
         
         elif chart_type == "Bayesian优化性能对比":
             st.header("🔄 Bayesian优化性能对比")
@@ -834,11 +824,9 @@ def main():
             fig = plot_bayesian_optimization_performance(reg_models, df)
             if fig:
                 st.pyplot(fig)
-                st.download_button(
-                    "下载图片",
-                    open(os.path.join(SAVE_RESULT_FOLDER, "bayesian_optimization_performance.png"), "rb"),
-                    "bayesian_optimization_performance.png"
-                )
+                img_path = os.path.join(SAVE_RESULT_FOLDER, "bayesian_optimization_performance.png")
+                if os.path.exists(img_path):
+                    st.download_button("下载图片", open(img_path, "rb").read(), "bayesian_optimization_performance.png")
             else:
                 st.warning("没有可用的Bayesian优化历史数据")
         
