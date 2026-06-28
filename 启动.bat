@@ -1,47 +1,227 @@
 @echo off
 chcp 65001 >nul
-title 激光熔覆金相分析ML系统
+title 激光熔覆金相分析ML系统 v2.0
 set PYTHONIOENCODING=utf-8
-
-echo ============================================
-echo   激光熔覆金相分析与机器学习优化系统
-echo ============================================
-echo.
 
 cd /d "%~dp0"
 
-:: 检查虚拟环境
+echo ============================================
+echo   激光熔覆金相分析与机器学习优化系统
+echo   Version 2.0
+echo ============================================
+echo.
+
+:: ============================================
+:: 步骤1: 检查/创建虚拟环境
+:: ============================================
 if not exist ".venv\Scripts\python.exe" (
-    echo [1/3] 创建虚拟环境...
+    echo [1/3] 正在创建虚拟环境...
     python -m venv .venv
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] 虚拟环境创建失败！请检查Python是否正确安装。
+        echo 请确保已安装 Python 3.10+ 并添加到系统PATH。
+        pause
+        exit /b 1
+    )
     echo 虚拟环境创建完成
+) else (
+    echo [1/3] 虚拟环境已存在
 )
 
-:: 检查依赖
+:: ============================================
+:: 步骤2: 检查依赖
+:: ============================================
 echo [2/3] 检查依赖...
-.venv\Scripts\python.exe -c "import streamlit" 2>nul
-if errorlevel 1 (
-    echo 正在安装依赖...
-    .venv\Scripts\pip.exe install streamlit pandas numpy matplotlib scikit-learn xgboost optuna shap torch torchvision openpyxl
+set NEED_INSTALL=0
+
+.venv\Scripts\python.exe -c "import pandas" 2>nul
+if errorlevel 1 set NEED_INSTALL=1
+
+.venv\Scripts\python.exe -c "import numpy" 2>nul
+if errorlevel 1 set NEED_INSTALL=1
+
+.venv\Scripts\python.exe -c "import matplotlib" 2>nul
+if errorlevel 1 set NEED_INSTALL=1
+
+.venv\Scripts\python.exe -c "import sklearn" 2>nul
+if errorlevel 1 set NEED_INSTALL=1
+
+.venv\Scripts\python.exe -c "import cv2" 2>nul
+if errorlevel 1 set NEED_INSTALL=1
+
+if %NEED_INSTALL%==1 (
+    echo 正在安装依赖（首次运行可能需要5-10分钟）...
+    .venv\Scripts\pip.exe install pandas numpy matplotlib scikit-learn scipy xgboost opencv-python pillow shap optuna python-docx openpyxl pyyaml tqdm joblib lxml torch torchvision chromadb sentence-transformers
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] 依赖安装失败！请检查网络连接。
+        pause
+        exit /b 1
+    )
     echo 依赖安装完成
+) else (
+    echo 依赖已就绪
 )
 
-:: 启动Streamlit（单窗口运行）
-echo [3/3] 启动Web界面...
+:: ============================================
+:: 步骤3: 显示菜单
+:: ============================================
+:MENU
 echo.
-echo 系统启动中，请稍候...
-echo.
-
-start http://localhost:8501
-
 echo ============================================
-echo  服务已启动！
-echo  本地地址: http://localhost:8501
-echo  浏览器已自动打开
+echo  请选择要运行的程序:
 echo ============================================
-echo.
-echo 按 Ctrl+C 可停止服务
+echo   [1] 图像处理主程序（图像分割 + ML分析）
+echo   [2] 生成论文级图表（15种高质量图表）
+echo   [3] 运行四阶段优化流水线
+echo   [4] 物理模型修正分析
+echo   [0] 退出
 echo ============================================
 echo.
+set /p choice=请输入选项编号 (0-4): 
 
-.venv\Scripts\streamlit.exe run streamlit_app.py --server.port 8501
+if "%choice%"=="1" goto RUN_IMAGE
+if "%choice%"=="2" goto RUN_FIGURES
+if "%choice%"=="3" goto RUN_PIPELINE
+if "%choice%"=="4" goto RUN_FIX
+if "%choice%"=="0" goto EXIT
+
+echo.
+echo [ERROR] 无效选项，请重新输入！
+goto MENU
+
+:: ============================================
+:: 选项1: 图像处理主程序
+:: ============================================
+:RUN_IMAGE
+echo.
+echo [3/3] 启动图像处理主程序...
+echo.
+echo ============================================
+echo  图像处理主程序
+echo  功能: 图像分割 + 定量分析 + ML模型训练
+echo  输出: analysis_output/ 目录
+echo ============================================
+echo.
+
+.venv\Scripts\python.exe image/picture_processing.py
+
+if errorlevel 1 (
+    echo.
+    echo [ERROR] 程序运行出错！
+) else (
+    echo.
+    echo [OK] 程序运行完成！
+    echo 结果保存在 analysis_output/ 目录下
+)
+
+echo.
+echo 按任意键返回菜单...
+pause >nul
+goto MENU
+
+:: ============================================
+:: 选项2: 生成论文级图表
+:: ============================================
+:RUN_FIGURES
+echo.
+echo [3/3] 生成论文级图表...
+echo.
+echo ============================================
+echo  论文级图表生成器
+echo  功能: 生成15种高质量论文图表（PNG格式）
+echo  输出: analysis_output/figures/paper/ 目录
+echo ============================================
+echo.
+
+.venv\Scripts\python.exe figures/generate_paper_figures.py
+
+if errorlevel 1 (
+    echo.
+    echo [ERROR] 图表生成失败！
+) else (
+    echo.
+    echo [OK] 图表生成完成！
+    echo 图表保存在 analysis_output/figures/paper/ 目录下
+)
+
+echo.
+echo 按任意键返回菜单...
+pause >nul
+goto MENU
+
+:: ============================================
+:: 选项3: 四阶段优化流水线
+:: ============================================
+:RUN_PIPELINE
+echo.
+echo [3/3] 启动四阶段优化流水线...
+echo.
+echo ============================================
+echo  四阶段优化流水线
+echo  阶段1: 数据整合与特征工程
+echo  阶段2: 功率响应面模型构建
+echo  阶段3: 性能预测模型训练
+echo  阶段4: 多目标优化与Pareto分析
+echo ============================================
+echo.
+echo 可用参数:
+echo   python run.py              - 执行完整四阶段流程
+echo   python run.py --stage N    - 执行单个阶段 (N=1,2,3,4)
+echo   python run.py --help       - 显示帮助信息
+echo.
+
+.venv\Scripts\python.exe run.py
+
+if errorlevel 1 (
+    echo.
+    echo [ERROR] 流水线运行失败！
+) else (
+    echo.
+    echo [OK] 流水线运行完成！
+)
+
+echo.
+echo 按任意键返回菜单...
+pause >nul
+goto MENU
+
+:: ============================================
+:: 选项4: 物理模型修正分析
+:: ============================================
+:RUN_FIX
+echo.
+echo [3/3] 启动物理模型修正分析...
+echo.
+echo ============================================
+echo  物理模型修正分析
+echo  功能: 修正硬度预测公式，验证物理机制模型
+echo  输出: analysis_output/ 目录
+echo ============================================
+echo.
+
+.venv\Scripts\python.exe analysis/fix_issues.py
+
+if errorlevel 1 (
+    echo.
+    echo [ERROR] 分析失败！
+) else (
+    echo.
+    echo [OK] 分析完成！
+)
+
+echo.
+echo 按任意键返回菜单...
+pause >nul
+goto MENU
+
+:: ============================================
+:: 退出
+:: ============================================
+:EXIT
+echo.
+echo 感谢使用，再见！
+echo.
+timeout /t 1 >nul
+exit /b 0

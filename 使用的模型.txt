@@ -1,3 +1,104 @@
-pretrained_microscopy_models 显微图像预训练模型
-Software tools to build deep learning microscopy segmentation and analysis models with less training data. Pretrained MicroNet encoders are available for download. Leverages transfer learning from classification models trained on a large (>100,000 images) dataset of microscopy images.
-可用于在训练数据较少的情况下构建深度学习显微镜分割与分析模型的软件工具。预训练的 MicroNet 编码器可供下载。该工具利用了在包含超过10万张显微镜图像的大型数据集上训练的分类模型所进行的迁移学习。
+========================================
+JG-1铁基合金激光熔覆参数优化项目 - 使用的模型
+========================================
+
+一、图像分割模型
+================
+
+1. micro_sam (Segment Anything for Microscopy)
+   - 来源: https://github.com/computational-cell-analytics/micro-sam
+   - 描述: 基于SAM的显微图像预训练分割模型，支持在训练数据较少时构建高精度分割模型
+   - 可用模型类型:
+     - vit_h: 最大模型，最高精度
+     - vit_l: 大模型，平衡精度与速度
+     - vit_b: 基础模型，较快（默认）
+   - 用途: 金相图像的自动分割（熔覆区、碳化物、孔隙、裂纹等）
+   - 文件: image/microsam_integration.py
+
+二、机器学习回归模型
+====================
+
+1. GBR (GradientBoostingRegressor)
+   - 来源: scikit-learn
+   - 描述: 梯度提升回归器，集成学习模型，通过逐步添加弱学习器来最小化损失函数
+   - 用途: 组织→性能模型（阶段3），多目标优化（阶段4）
+   - 性能: CV R²=-0.0705，MAE=51.82 HV，RMSE=61.97 HV（基于实测硬度）
+   - 文件: pipeline/property_model.py
+
+2. RFR (RandomForestRegressor)
+   - 来源: scikit-learn
+   - 描述: 随机森林回归器，由多个决策树组成的集成学习模型，通过投票机制减少过拟合
+   - 用途: 组织→性能模型（阶段3），集成预测（主程序）
+   - 性能: CV R²=-0.0870，MAE=52.01 HV，RMSE=62.30 HV（基于实测硬度）
+   - 文件: pipeline/property_model.py, image/picture_processing.py
+
+3. GPR (GaussianProcessRegressor)
+   - 来源: scikit-learn
+   - 描述: 高斯过程回归器，基于贝叶斯框架的非参数回归方法，提供不确定性估计
+   - 用途: 功率→组织响应面（阶段2），功率→硬度直接映射（阶段2），组织→性能模型（阶段3）
+   - 性能: 需基于实测硬度重新评估
+   - 文件: pipeline/power_response_model.py, pipeline/property_model.py
+
+4. XGBoost (XGBRegressor)
+   - 来源: XGBoost库
+   - 描述: 极端梯度提升算法，GBR的优化版本，支持GPU加速和并行计算
+   - 用途: 集成预测（主程序），贝叶斯优化
+   - 性能: CV R²=-0.1358，MAE=53.79 HV，RMSE=63.71 HV（基于实测硬度）
+   - 文件: image/picture_processing.py
+
+5. GBDT (HistGradientBoostingRegressor)
+   - 来源: scikit-learn
+   - 描述: 直方图梯度提升回归器，使用直方图优化计算效率
+   - 用途: 集成预测（主程序）
+   - 性能: CV R²=-0.0705，MAE=51.82 HV，RMSE=61.97 HV（基于实测硬度）
+   - 文件: image/picture_processing.py
+
+6. KNN (KNeighborsRegressor)
+   - 来源: scikit-learn
+   - 描述: K近邻回归器，基于距离的非参数回归方法
+   - 用途: 集成预测（主程序）
+   - 性能: CV R²=-0.3123，MAE=58.32 HV，RMSE=68.46 HV（基于实测硬度）
+   - 文件: image/picture_processing.py
+
+三、嵌入模型（知识管理）
+========================
+
+1. paraphrase-multilingual-MiniLM-L12-v2
+   - 来源: sentence-transformers
+   - 描述: 多语言语义嵌入模型，支持中文，基于MiniLM架构
+   - 用途: 本地离线知识库的文本向量化，支持文档检索和相似度匹配
+   - 文件: knowledge/knowledge_base.py
+
+四、模型集成策略
+================
+
+集成预测权重分配（主程序）:
+  - XGBoost: 0.35
+  - RFR: 0.30
+  - GBDT: 0.20
+  - KNN: 0.15
+
+集成模型性能（基于实测硬度）:
+  - Ensemble R²: 0.4477
+  - Ensemble MAE: 37.64 HV
+  - Ensemble RMSE: 45.75 HV
+
+注意: 当前模型性能较低，主要原因是样本量不足（50个样本）和特征数量过多（7个特征）。
+建议增加样本量或进行特征选择/降维以提升模型泛化能力。
+
+五、交叉验证方法
+================
+
+- Leave-One-Out (LOO): 阶段3组织→性能模型
+- Leave-One-Power-Out: 阶段2响应面模型（按功率分组）
+
+六、模型保存格式
+================
+
+- .pkl: 机器学习模型（使用pickle序列化）
+- .joblib: 缓存模型（使用joblib序列化）
+- Chroma DB: 向量数据库（本地存储）
+
+========================================
+更新日期: 2026-06-27
+========================================
