@@ -32,7 +32,7 @@ setup_plot_style()
 
 def load_data():
     """加载数据"""
-    csv_path = os.path.join(OUTPUT_DIR, "完整实验数据汇总.csv")
+    csv_path = os.path.join(OUTPUT_DIR, "data_full.csv")
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
     df["power_w"] = df["激光功率"].apply(lambda x: float(str(x).replace("W", "")))
     return df
