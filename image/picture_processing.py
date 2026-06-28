@@ -57,6 +57,7 @@ from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from tqdm import tqdm
+from microsam_integration import MicroSAMSegmenter
 
 # ===================== 全局配置参数 =====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -409,7 +410,29 @@ def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level, pixe
     else:
         result_dict["熔覆层平均晶粒尺寸(μm)"] = 0
         result_dict["熔覆层平均晶粒面积(μm²)"] = 0
-    
+
+    # 计算熔覆层宽高比（最小外接矩形）
+    if np.any(cladding_mask):
+        contours, _ = cv2.findContours(cladding_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            all_points = np.vstack(contours)
+            rect = cv2.minAreaRect(all_points)
+            rect_w, rect_h = rect[1]
+            width_um = max(rect_w, rect_h) * pixel_um_scale
+            height_um = min(rect_w, rect_h) * pixel_um_scale
+            wh_ratio = round(width_um / max(height_um, 0.01), 2)
+            result_dict["熔覆层宽度(μm)"] = round(width_um, 2)
+            result_dict["熔覆层高度(μm)"] = round(height_um, 2)
+            result_dict["宽高比(W/H)"] = wh_ratio
+        else:
+            result_dict["熔覆层宽度(μm)"] = 0
+            result_dict["熔覆层高度(μm)"] = 0
+            result_dict["宽高比(W/H)"] = 0
+    else:
+        result_dict["熔覆层宽度(μm)"] = 0
+        result_dict["熔覆层高度(μm)"] = 0
+        result_dict["宽高比(W/H)"] = 0
+
     substrate_area = area_sum.get(0, 0)
     cladding_area = area_sum.get(1, 0)
     if substrate_area + cladding_area > 0:
@@ -417,7 +440,7 @@ def calculate_quantitative_data(seg_mask, img_name, mag_times, power_level, pixe
         result_dict["基体稀释率(%)"] = dilution_rate
     else:
         result_dict["基体稀释率(%)"] = 0
-    
+
     return result_dict, seg_mask
 
 
@@ -607,7 +630,7 @@ def main():
     
     os.makedirs(SAVE_RESULT_FOLDER, exist_ok=True)
     
-    segmenter = MicroscopySegmenter()
+    segmenter = MicroSAMSegmenter(model_type="lm_general")
     
     all_quant_result = []
     all_mech_result = []
@@ -704,14 +727,7 @@ def main():
         csv_save = os.path.join(SAVE_RESULT_FOLDER, "金相定量表征数据汇总.csv")
         quant_df.to_csv(csv_save, index=False, encoding='utf-8-sig')
         print(f"\n定量数据表已保存至: {csv_save}")
-        
-        try:
-            excel_save = os.path.join(SAVE_RESULT_FOLDER, "金相定量表征数据汇总.xlsx")
-            quant_df.to_excel(excel_save, index=False)
-            print(f"Excel数据表已保存至: {excel_save}")
-        except ImportError:
-            print("提示: openpyxl未安装，仅保存CSV格式")
-        
+
         seg_img_dir = os.path.join(SAVE_RESULT_FOLDER, "figures", "segmentation")
         generate_word_report(quant_df, all_mech_result, seg_img_dir, REPORT_SAVE_PATH)
         

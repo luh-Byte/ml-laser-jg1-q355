@@ -3,11 +3,15 @@
 基于物理机制（Hall-Petch关系、沉淀强化）重新设计预测公式
 """
 
+import os
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
-import os
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']

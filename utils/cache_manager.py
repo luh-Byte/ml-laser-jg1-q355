@@ -240,8 +240,6 @@ def save_to_results_subfolder(subfolder_name, file_name, data, data_type='csv'):
         elif data_type == 'txt':
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(data)
-        elif data_type == 'xlsx':
-            data.to_excel(file_path, index=False)
         
         return True, file_path
     except Exception as e:

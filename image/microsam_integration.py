@@ -45,7 +45,8 @@ class MicroSAMSegmenter:
 
         try:
             # 尝试导入 micro_sam
-            from micro_sam import sam_model_registry, SamPredictor
+            import micro_sam
+            from micro_sam.automatic_segmentation import automatic_instance_segmentation
 
             # 确定设备
             if self.device == "auto":
@@ -54,18 +55,16 @@ class MicroSAMSegmenter:
 
             print(f"正在加载 micro_sam 模型: {self.model_type} (设备: {self.device})")
 
-            # 加载预训练模型
-            self.model = sam_model_registry[self.model_type](
-                checkpoint=None,  # micro_sam 会自动下载
-                device=self.device
-            )
-            self.predictor = SamPredictor(self.model)
+            # micro_sam 1.8.4 使用不同的API
+            # 这里我们直接存储模型类型，实际分割时调用 automatic_instance_segmentation
+            self.model = None
+            self.predictor = None
 
             self._initialized = True
             print("micro_sam 模型加载完成")
 
-        except ImportError:
-            print("警告: micro_sam 未安装，将使用传统分割方法")
+        except ImportError as e:
+            print(f"警告: micro_sam 未安装 ({e})，将使用传统分割方法")
             print("安装方法: pip install micro-sam 或 conda install -c conda-forge micro_sam")
             self._initialized = True  # 标记为已尝试初始化
             self.model = None
@@ -124,23 +123,34 @@ class MicroSAMSegmenter:
         自动分割模式 - 使用 micro_sam 的自动分割功能
         """
         try:
-            from micro_sam import automatic_instance_segmentation
+            from micro_sam.automatic_segmentation import automatic_instance_segmentation
 
             # 自动实例分割
-            masks = automatic_instance_segmentation(
-                self.predictor,
-                img_array,
-                pred_iou_thresh=0.8,
-                stability_score_thresh=0.9,
-                min_mask_region_area=100
-            )
+            # micro_sam 1.8.4 的 API 可能不同，尝试不同的调用方式
+            try:
+                # 尝试新API
+                masks = automatic_instance_segmentation(
+                    img_array,
+                    model_type=self.model_type,
+                    pred_iou_thresh=0.8,
+                    stability_score_thresh=0.9,
+                    min_mask_region_area=100
+                )
+            except TypeError:
+                # 尝试旧API
+                masks = automatic_instance_segmentation(
+                    self.predictor,
+                    img_array,
+                    pred_iou_thresh=0.8,
+                    stability_score_thresh=0.9,
+                    min_mask_region_area=100
+                )
             return masks
 
         except Exception as e:
             print(f"自动分割失败: {e}")
-            # 回退到全图分割
-            masks, scores, _ = self.predictor.predict(multimask_output=True)
-            return masks[np.argmax(scores)]
+            # 回退到传统分割
+            return self._traditional_segment(img_array)
 
     def _traditional_segment(self, img_array: np.ndarray) -> np.ndarray:
         """

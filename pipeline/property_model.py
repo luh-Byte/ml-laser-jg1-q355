@@ -66,6 +66,10 @@ def load_and_prepare():
             "wear_friction_steady",
             "wear_friction_std",
         ],
+        "process": [
+            "扫描速度(mm/min)",
+            "送粉速率(g/min)",
+        ],
     }
 
     all_features = ["power_w"]
@@ -80,15 +84,40 @@ def load_and_prepare():
         df[col_name] = df["power_w"] * df[f]
         all_features.append(col_name)
 
+    # 添加交叉特征: 功率×工艺参数
+    for f in ["扫描速度(mm/min)", "送粉速率(g/min)"]:
+        if f in df.columns:
+            col_name = f"power_x_{f}"
+            df[col_name] = df["power_w"] * df[f]
+            all_features.append(col_name)
+
     # 添加Hall-Petch项
     df["hall_petch"] = 1.0 / np.sqrt(df["熔覆层平均晶粒尺寸(μm)"])
     all_features.append("hall_petch")
 
-    # 添加热输入估算
-    scan_speed = 300  # mm/min
+    # 添加热输入估算（使用可变扫描速度）
     scan_spacing = 0.05  # mm
-    df["heat_input"] = df["power_w"] / (scan_speed / 60) / scan_spacing / 1000
+    if "扫描速度(mm/min)" in df.columns:
+        df["heat_input"] = df["power_w"] / (df["扫描速度(mm/min)"] / 60) / scan_spacing / 1000
+    else:
+        scan_speed = 600  # mm/min (实际值: 10 mm/s = 600 mm/min)
+        df["heat_input"] = df["power_w"] / (scan_speed / 60) / scan_spacing / 1000
     all_features.append("heat_input")
+
+    # 添加梯度硬度特征
+    gradient_features = [
+        "mh_cladding_hv",
+        "mh_substrate_hv", 
+        "mh_gradient_range",
+    ]
+    for f in gradient_features:
+        if f in df.columns:
+            all_features.append(f)
+    
+    # 添加硬度比值特征
+    if "mh_cladding_hv" in df.columns and "mh_substrate_hv" in df.columns:
+        df["hardness_ratio"] = df["mh_cladding_hv"] / df["mh_substrate_hv"].clip(lower=1)
+        all_features.append("hardness_ratio")
 
     valid_features = [f for f in all_features if f in df.columns and df[f].notna().all()]
 
@@ -145,7 +174,35 @@ def train_models(df, features, target):
         print(f"  {name}: train R²={r2_train:.4f}, LOO-CV R²={r2:.4f}, "
               f"CV-RMSE={rmse:.2f} HV, CV-MAE={mae:.2f} HV")
 
-    return results, X, y, X_scaled
+        # 过拟合检测
+        gap = r2_train - r2
+        if gap > 0.1:
+            print(f"  ⚠️ [{name}] 过拟合风险: 训练R²-CV_R²={gap:.4f} > 0.1")
+        if len(features) > len(y) * 0.5:
+            print(f"  ⚠️ [{name}] 特征数/样本数={len(features)}/{len(y)}={len(features)/len(y):.2f} > 0.5，建议降维")
+        if r2 > 0.99:
+            print(f"  ⚠️ [{name}] CV R²={r2:.4f} ≈ 1.0，检查是否存在数据泄露")
+
+    # 特征数量/样本数比例警告
+    ratio = len(features) / len(y)
+    print(f"\n  特征/样本比: {len(features)}/{len(y)} = {ratio:.3f}")
+    if ratio > 0.3:
+        print(f"  ⚠️ 特征维度偏高，建议PCA或特征选择")
+
+    # 学习曲线数据（样本数 vs R²）
+    from sklearn.model_selection import learning_curve
+    gbr = models["GBR"]
+    train_sizes_abs, train_scores, val_scores = learning_curve(
+        gbr, X_scaled, y, cv=min(5, len(y) // 2), scoring='r2',
+        train_sizes=np.linspace(0.3, 1.0, 5), random_state=42
+    )
+    lc_data = {
+        "train_sizes": train_sizes_abs.tolist(),
+        "train_mean": train_scores.mean(axis=1).tolist(),
+        "val_mean": val_scores.mean(axis=1).tolist(),
+    }
+
+    return results, X, y, X_scaled, lc_data
 
 
 # ===================== 3. SHAP分析 =====================
@@ -356,10 +413,27 @@ def main():
     print(f"  新增: power×组织交叉项 + Hall-Petch + 热输入")
 
     print("\n[2/6] 训练模型(LOO交叉验证)...")
-    results, X, y, X_scaled = train_models(df, features, target)
+    results, X, y, X_scaled, lc_data = train_models(df, features, target)
 
     print("\n[3/6] 模型对比图...")
     plot_model_comparison(results, y, df)
+
+    # 绘制学习曲线
+    print("\n[3.5/6] 学习曲线...")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(lc_data["train_sizes"], lc_data["train_mean"], "b-o", label="Training R²", linewidth=2)
+    ax.plot(lc_data["train_sizes"], lc_data["val_mean"], "r-s", label="Validation R²", linewidth=2)
+    ax.fill_between(lc_data["train_sizes"], lc_data["val_mean"], alpha=0.1, color="red")
+    ax.set_xlabel("Training Set Size")
+    ax.set_ylabel("R² Score")
+    ax.set_title("Learning Curve (GBR)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    path = os.path.join(FIG_DIR, "learning_curve.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [OK] {path}")
 
     print("\n[4/6] SHAP特征重要性分析...")
     feat_imp = shap_analysis(results["GBR"]["model"], X_scaled, features)

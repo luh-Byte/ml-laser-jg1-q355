@@ -59,9 +59,9 @@ def read_wear_data():
 
     file_map = {
         "900W": "900W.txt",
-        "1200W": "1200w.txt",
-        "1500W": "1500w.txt",
-        "1800W": "1800w.txt",
+        "1200W": "1200W.txt",
+        "1500W": "1500W.txt",
+        "1800W": "1800W.txt",
     }
 
     for power, filename in file_map.items():
@@ -302,12 +302,20 @@ def main():
             for k, v in xrd_data[power_key].items():
                 df.at[idx, k] = v
 
-    # 整合论文中的工艺参数和化学成分数据
-    print("\n[5/5] 整合论文中的工艺参数和化学成分数据...")
-    
-    # 添加工艺参数
-    df['送粉速度(g/min)'] = 10
-    df['扫描速度(mm/s)'] = 10
+    # 整合工艺参数和化学成分数据
+    print("\n[5/5] 整合工艺参数和化学成分数据...")
+
+    # 添加工艺参数（支持可变值：若CSV已有列则保留，否则填默认值）
+    # 实际工艺参数: 扫描速度=10mm/s=600mm/min, 送粉速率=10g/min
+    if '送粉速率(g/min)' not in df.columns:
+        df['送粉速率(g/min)'] = 10.0
+    if '扫描速度(mm/min)' not in df.columns:
+        df['扫描速度(mm/min)'] = 600.0  # 实际值: 10 mm/s = 600 mm/min
+    if '送粉速度(g/min)' in df.columns:
+        df = df.drop(columns=['送粉速度(g/min)'])
+    if '扫描速度(mm/s)' in df.columns:
+        df['扫描速度(mm/min)'] = df['扫描速度(mm/s)'] * 60  # 转换单位
+        df = df.drop(columns=['扫描速度(mm/s)'])
     
     # 添加JG-1铁基合金粉末化学成分
     df['JG-1_C_含量(wt.%)'] = 1.0
@@ -399,5 +407,115 @@ def main():
     print(f"[OK] 报告已保存: {report_path}")
 
 
+# ===================== 模拟数据生成（代码验证用） =====================
+def generate_simulated_data():
+    """生成L25(5³)正交实验模拟数据，用于代码流程验证
+
+    基于现有4组功率数据的实测硬度，用物理公式+噪声生成25组模拟数据。
+    后续替换为真实实验数据时，只需修改CSV文件。
+    """
+    import csv
+
+    np.random.seed(42)
+
+    # 5水平正交表 L25(5³)
+    orthogonal_table = [
+        [1, 1, 1], [1, 2, 2], [1, 3, 3], [1, 4, 4], [1, 5, 5],
+        [2, 1, 2], [2, 2, 3], [2, 3, 4], [2, 4, 5], [2, 5, 1],
+        [3, 1, 3], [3, 2, 4], [3, 3, 5], [3, 4, 1], [3, 5, 2],
+        [4, 1, 4], [4, 2, 5], [4, 3, 1], [4, 4, 2], [4, 5, 3],
+        [5, 1, 5], [5, 2, 1], [5, 3, 2], [5, 4, 3], [5, 5, 4],
+    ]
+
+    power_levels = [700, 900, 1100, 1500, 1800]
+    vs_levels = [200, 250, 300, 350, 400]
+    vf_levels = [6, 8, 10, 12, 14]
+
+    scan_spacing = 0.05
+
+    rows = []
+    for i, row in enumerate(orthogonal_table):
+        p_idx, vs_idx, vf_idx = row
+        p = power_levels[p_idx - 1]
+        vs = vs_levels[vs_idx - 1]
+        vf = vf_levels[vf_idx - 1]
+
+        heat_input = p / (vs / 60) / scan_spacing / 1000
+
+        # 模拟硬度：基于功率正相关 + 速度负相关 + 噪声
+        hv_base = 180 + 0.12 * p - 0.3 * vs + 5 * vf
+        hv_noise = np.random.normal(0, 20)
+        mh_mean = max(180, min(500, hv_base + hv_noise))
+
+        # 模拟微观组织（基于功率的物理趋势）
+        grain_size = 25 + 0.02 * p + np.random.normal(0, 3)
+        carbide = 15 - 0.003 * p + np.random.normal(0, 1.5)
+        porosity = 0.3 + 0.0002 * (p - 900) + np.random.normal(0, 0.1)
+        crack = 0.4 + 0.0001 * (p - 900) + np.random.normal(0, 0.05)
+        dilution = 35 + 0.005 * (p - 900) + np.random.normal(0, 1.5)
+        cladding_area = 60 + np.random.normal(0, 5)
+
+        # 模拟宽高比
+        width = 2000 + 0.5 * p - 2 * vs + 50 * vf + np.random.normal(0, 100)
+        height = 400 + 0.1 * p + 0.5 * vf + np.random.normal(0, 30)
+        wh_ratio = max(1.0, width / max(height, 1))
+
+        rows.append({
+            '激光功率': f'{p}W',
+            '图像名称': f'simulated_{i+1:02d}.tiff',
+            '放大倍数': 200,
+            '熔覆层组织面积占比(%)': round(cladding_area, 2),
+            '析出相/碳化物面积占比(%)': round(max(5, carbide), 2),
+            '气孔孔隙率(%)': round(max(0.05, porosity), 4),
+            '微裂纹面积占比(%)': round(max(0.01, crack), 4),
+            '熔覆层平均晶粒尺寸(μm)': round(max(10, grain_size), 2),
+            '基体稀释率(%)': round(max(25, dilution), 2),
+            '背景/基体面积占比(%)': round(100 - cladding_area - max(5, carbide), 2),
+            '气孔缺陷面积占比(%)': round(max(0.05, porosity), 4),
+            '裂纹缺陷面积占比(%)': round(max(0.01, crack), 4),
+            '熔覆层宽度(μm)': round(max(1000, width), 2),
+            '熔覆层高度(μm)': round(max(200, height), 2),
+            '宽高比(W/H)': round(wh_ratio, 2),
+            'mh_mean_hv': round(mh_mean, 1),
+            'mh_std_hv': round(np.random.uniform(15, 50), 1),
+            'mh_min_hv': round(mh_mean - np.random.uniform(30, 80), 1),
+            'mh_max_hv': round(mh_mean + np.random.uniform(30, 80), 1),
+            'mh_count': 10,
+            'mh_cv_pct': round(np.random.uniform(5, 20), 1),
+            'wear_friction_mean': round(0.35 + np.random.normal(0, 0.05), 4),
+            'wear_friction_steady': round(0.30 + np.random.normal(0, 0.04), 4),
+            'wear_friction_std': round(0.05 + np.random.normal(0, 0.01), 4),
+            'wear_friction_max': round(0.55 + np.random.normal(0, 0.05), 4),
+            'wear_data_points': 1000,
+            'eis_Rs_ohm': round(50 + np.random.normal(0, 5), 1),
+            'eis_Rct_ohm': round(1500 + 2 * p + np.random.normal(0, 200), 1),
+            'eis_Z_max_ohm': round(2000 + 2 * p + np.random.normal(0, 250), 1),
+            'eis_theta_min_deg': round(-60 + np.random.normal(0, 5), 1),
+            'eis_freq_range': '1.0e-02-1.0e+05',
+            'eis_data_points': 50,
+            'xrd_main_peak_2theta': round(44.5 + np.random.normal(0, 0.3), 2),
+            'xrd_main_peak_intensity': round(500 + np.random.normal(0, 50), 0),
+            'xrd_peak_44_area': round(3000 + np.random.normal(0, 300), 0),
+            'xrd_total_intensity': round(8000 + np.random.normal(0, 500), 0),
+            'xrd_data_points': 200,
+            '送粉速率(g/min)': float(vf),
+            '扫描速度(mm/min)': float(vs),
+        })
+
+    out_path = os.path.join(OUTPUT_DIR, "simulated_orthogonal_data.csv")
+    df_sim = pd.DataFrame(rows)
+    df_sim.to_csv(out_path, index=False, encoding="utf-8-sig")
+    print(f"\n[OK] 模拟正交数据已保存: {out_path}")
+    print(f"     行数: {len(df_sim)}, 列数: {len(df_sim.columns)}")
+    print(f"     功率范围: {df_sim['激光功率'].unique()}")
+    print(f"     扫描速度范围: {df_sim['扫描速度(mm/min)'].min()}-{df_sim['扫描速度(mm/min)'].max()} mm/min")
+    print(f"     送粉速率范围: {df_sim['送粉速率(g/min)'].min()}-{df_sim['送粉速率(g/min)'].max()} g/min")
+    return out_path
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--sim" in sys.argv:
+        generate_simulated_data()
+    else:
+        main()

@@ -53,27 +53,48 @@ def load_data_and_features(features):
         if col_name in features and col_name not in df.columns:
             df[col_name] = df["power_w"] * df[f]
 
+    if "扫描速度(mm/min)" in df.columns:
+        for f in ["扫描速度(mm/min)", "送粉速率(g/min)"]:
+            col_name = f"power_x_{f}"
+            if col_name in features and col_name not in df.columns:
+                df[col_name] = df["power_w"] * df[f]
+
     if "hall_petch" in features and "hall_petch" not in df.columns:
         df["hall_petch"] = 1.0 / np.sqrt(df["熔覆层平均晶粒尺寸(μm)"])
 
     if "heat_input" in features and "heat_input" not in df.columns:
-        df["heat_input"] = df["power_w"] / (300 / 60) / 0.05 / 1000
+        if "扫描速度(mm/min)" in df.columns:
+            df["heat_input"] = df["power_w"] / (df["扫描速度(mm/min)"] / 60) / 0.05 / 1000
+        else:
+            df["heat_input"] = df["power_w"] / (300 / 60) / 0.05 / 1000
 
     return df
 
 
 # ===================== 2. 预测函数封装 =====================
 def make_predictor(model, scaler, features, df_median):
-    """封装预测函数，输入功率(W) → 输出多维性能"""
+    """封装预测函数，输入(P, Vs, Vf)三元组 → 输出硬度"""
 
-    def predict_hardness(power_w):
+    def predict_hardness(params):
+        if isinstance(params, (int, float)):
+            power_w, scan_speed, powder_rate = params, 300, 10
+        else:
+            power_w, scan_speed, powder_rate = params[0], params[1], params[2]
+
         X = df_median[features].values.copy().reshape(1, -1)
         pw_idx = features.index("power_w")
         X[0, pw_idx] = power_w
 
+        if "扫描速度(mm/min)" in features:
+            vs_idx = features.index("扫描速度(mm/min)")
+            X[0, vs_idx] = scan_speed
+        if "送粉速率(g/min)" in features:
+            vf_idx = features.index("送粉速率(g/min)")
+            X[0, vf_idx] = powder_rate
+
         if "heat_input" in features:
             hi_idx = features.index("heat_input")
-            X[0, hi_idx] = power_w / (300 / 60) / 0.05 / 1000
+            X[0, hi_idx] = power_w / (scan_speed / 60) / 0.05 / 1000
 
         if "hall_petch" in features:
             gs_idx = features.index("熔覆层平均晶粒尺寸(μm)")
@@ -95,8 +116,12 @@ def make_predictor(model, scaler, features, df_median):
 
 
 def make_defect_predictor(df_median, features):
-    """基于功率估算缺陷率(气孔+裂纹)"""
-    def predict_defects(power_w):
+    """基于(P, Vs, Vf)估算缺陷率(气孔+裂纹)"""
+    def predict_defects(params):
+        if isinstance(params, (int, float)):
+            power_w = params
+        else:
+            power_w = params[0]
         base_porosity = df_median.get("气孔孔隙率(%)", 0.3)
         base_crack = df_median.get("微裂纹面积占比(%)", 0.4)
         p_factor = (power_w - 900) / (1800 - 900)
@@ -109,49 +134,61 @@ def make_defect_predictor(df_median, features):
 
 # ===================== 3. 多目标优化 =====================
 def multi_objective_optimize(predict_hardness, predict_defects):
-    """Pareto前沿搜索 + 加权优化"""
+    """Pareto前沿搜索 + 加权优化（3D: P, Vs, Vf）"""
 
     def objective_weighted(x, w_h=0.7, w_d=0.3):
-        power = x[0]
-        hardness = predict_hardness(power)
-        porosity, crack = predict_defects(power)
+        power_w, scan_speed, powder_rate = x[0], x[1], x[2]
+        hardness = predict_hardness(x)
+        porosity, crack = predict_defects(x)
         defect_score = porosity + crack
         h_norm = (hardness - 200) / (450 - 200)
         d_norm = defect_score / 2.0
         return -(w_h * h_norm - w_d * d_norm)
 
-    bounds = [(900, 1800)]
+    bounds = [(700, 1800), (200, 400), (6, 14)]
     result = differential_evolution(objective_weighted, bounds, seed=42, maxiter=200, tol=1e-6)
 
-    power_range = np.arange(900, 1810, 10)
+    # 网格搜索生成Pareto前沿
     pareto_front = []
-    for pw in power_range:
-        h = predict_hardness(pw)
-        por, crk = predict_defects(pw)
-        pareto_front.append({"power": pw, "hardness": h, "porosity": por, "crack": crk,
-                             "defect_total": por + crk})
+    for pw in np.arange(700, 1810, 100):
+        for vs in np.arange(200, 410, 50):
+            for vf in np.arange(6, 15, 2):
+                params = [pw, vs, vf]
+                h = predict_hardness(params)
+                por, crk = predict_defects(params)
+                pareto_front.append({
+                    "power": pw, "scan_speed": vs, "powder_rate": vf,
+                    "hardness": h, "porosity": por, "crack": crk,
+                    "defect_total": por + crk
+                })
 
     return pareto_front
 
 
 # ===================== 4. 敏感性分析 =====================
 def sensitivity_analysis(predict_hardness, predict_defects, df_median, features):
-    """功率变化±100W的敏感性"""
+    """功率变化±200W的敏感性（固定Vs=300, Vf=10）"""
     base_power = 1350
+    base_vs = 300
+    base_vf = 10
     delta_range = np.arange(-200, 210, 10)
+
+    base_params = [base_power, base_vs, base_vf]
+    base_h = predict_hardness(base_params)
 
     results = []
     for delta in delta_range:
         pw = base_power + delta
-        h = predict_hardness(pw)
-        por, crk = predict_defects(pw)
+        params = [pw, base_vs, base_vf]
+        h = predict_hardness(params)
+        por, crk = predict_defects(params)
         results.append({
             "delta_power": delta,
             "power": pw,
             "hardness": h,
             "porosity": por,
             "crack": crk,
-            "hardness_change": h - predict_hardness(base_power),
+            "hardness_change": h - base_h,
         })
 
     return pd.DataFrame(results)
@@ -204,7 +241,7 @@ def plot_sensitivity(sens_df, base_power=1350):
 
 # ===================== 5. Pareto前沿可视化 =====================
 def plot_pareto(pareto_front):
-    """绘制Pareto前沿"""
+    """绘制Pareto前沿（3D参数空间）"""
     pf = pd.DataFrame(pareto_front)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -228,9 +265,12 @@ def plot_pareto(pareto_front):
     for idx, label, color in [(opt_h_idx, "Max Hardness", "red"),
                                (opt_d_idx, "Min Defects", "blue"),
                                (balance_idx, "Balanced", "green")]:
-        ax.annotate(f'{label}\n{pf.loc[idx, "power"]:.0f}W, {pf.loc[idx, "hardness"]:.0f}HV',
+        p_val = pf.loc[idx, "power"]
+        vs_val = pf.loc[idx, "scan_speed"] if "scan_speed" in pf.columns else 0
+        vf_val = pf.loc[idx, "powder_rate"] if "powder_rate" in pf.columns else 0
+        ax.annotate(f'{label}\n{p_val:.0f}W/{vs_val:.0f}mm/{vf_val:.1f}r\n{pf.loc[idx, "hardness"]:.0f}HV',
                     xy=(pf.loc[idx, "defect_total"], pf.loc[idx, "hardness"]),
-                    fontsize=9, color=color, fontweight="bold",
+                    fontsize=8, color=color, fontweight="bold",
                     arrowprops=dict(arrowstyle="->", color=color),
                     xytext=(10, 10), textcoords="offset points")
 
@@ -260,14 +300,16 @@ def plot_pareto(pareto_front):
 
 # ===================== 6. 置信区间估计 =====================
 def confidence_analysis(predict_hardness, base_power=1350, n_bootstrap=1000):
-    """Bootstrap置信区间"""
+    """Bootstrap置信区间（固定Vs=300, Vf=10）"""
     powers_to_test = [900, 1050, 1200, 1350, 1500, 1650, 1800]
+    base_vs = 300
+    base_vf = 10
     results = {}
 
     for pw in powers_to_test:
-        # 模拟测量噪声 (基于实测数据的CV)
-        base_h = predict_hardness(pw)
-        noise_std = 30  # 基于实测数据的典型标准差
+        params = [pw, base_vs, base_vf]
+        base_h = predict_hardness(params)
+        noise_std = 30
 
         bootstrap_h = []
         for _ in range(n_bootstrap):
@@ -285,7 +327,7 @@ def confidence_analysis(predict_hardness, base_power=1350, n_bootstrap=1000):
 
 # ===================== 7. 验证方案生成 =====================
 def generate_verification_plan(pf_df, conf_results, output_dir):
-    """生成实验验证方案"""
+    """生成实验验证方案（3D参数空间）"""
     plan_path = os.path.join(output_dir, "实验验证方案.md")
 
     opt_h = pf_df.loc[pf_df["hardness"].idxmax()]
@@ -297,63 +339,61 @@ def generate_verification_plan(pf_df, conf_results, output_dir):
     balanced = pf_df.loc[balance_idx]
 
     with open(plan_path, "w", encoding="utf-8") as f:
-        f.write("# 实验验证方案\n\n")
+        f.write("# 实验验证方案（3D参数优化）\n\n")
         f.write("## 1. 优化结果摘要\n\n")
-        f.write("| 策略 | 功率(W) | 预测硬度(HV) | 预测缺陷(%) |\n")
-        f.write("|------|---------|-------------|------------|\n")
-        f.write(f"| 最大硬度 | {opt_h['power']:.0f} | {opt_h['hardness']:.1f} | {opt_h['defect_total']:.3f} |\n")
-        f.write(f"| 最小缺陷 | {opt_d['power']:.0f} | {opt_d['hardness']:.1f} | {opt_d['defect_total']:.3f} |\n")
-        f.write(f"| 综合平衡 | {balanced['power']:.0f} | {balanced['hardness']:.1f} | {balanced['defect_total']:.3f} |\n")
+        f.write("| 策略 | 功率(W) | 扫描速度(mm/min) | 送粉速率(g/min) | 预测硬度(HV) | 预测缺陷(%) |\n")
+        f.write("|------|---------|-----------------|----------------|-------------|------------|\n")
+        f.write(f"| 最大硬度 | {opt_h['power']:.0f} | {opt_h['scan_speed']:.0f} | {opt_h['powder_rate']:.1f} | {opt_h['hardness']:.1f} | {opt_h['defect_total']:.3f} |\n")
+        f.write(f"| 最小缺陷 | {opt_d['power']:.0f} | {opt_d['scan_speed']:.0f} | {opt_d['powder_rate']:.1f} | {opt_d['hardness']:.1f} | {opt_d['defect_total']:.3f} |\n")
+        f.write(f"| 综合平衡 | {balanced['power']:.0f} | {balanced['scan_speed']:.0f} | {balanced['powder_rate']:.1f} | {balanced['hardness']:.1f} | {balanced['defect_total']:.3f} |\n")
 
-        f.write("\n## 2. 推荐验证功率点\n\n")
-        f.write("基于Pareto分析，建议验证以下功率点：\n\n")
-        f.write("| 序号 | 功率(W) | 预期硬度(HV) | 验证目的 |\n")
-        f.write("|------|---------|-------------|----------|\n")
+        f.write("\n## 2. 推荐验证参数组合\n\n")
+        f.write("基于Pareto分析，建议验证以下5组参数：\n\n")
+        f.write("| 序号 | 功率(W) | 扫描速度(mm/min) | 送粉速率(g/min) | 预期硬度(HV) | 验证目的 |\n")
+        f.write("|------|---------|-----------------|----------------|-------------|----------|\n")
 
         verify_points = [
-            (opt_h["power"], "验证最大硬度预测"),
-            (balanced["power"], "验证综合平衡点"),
-            (opt_d["power"], "验证最小缺陷预测"),
-            (1050, "补充中间功率点"),
-            (1650, "补充中间功率点"),
+            (opt_h["power"], opt_h["scan_speed"], opt_h["powder_rate"], "验证最大硬度预测"),
+            (balanced["power"], balanced["scan_speed"], balanced["powder_rate"], "验证综合平衡点"),
+            (opt_d["power"], opt_d["scan_speed"], opt_d["powder_rate"], "验证最小缺陷预测"),
+            (1100, 300, 10, "补充中间参数点"),
+            (1400, 250, 8, "补充中间参数点"),
         ]
-        for i, (pw, purpose) in enumerate(verify_points, 1):
-            h_pred = conf_results.get(int(pw), conf_results.get(pw, {"mean": 0}))
-            f.write(f"| {i} | {pw:.0f} | {h_pred.get('mean', 0):.1f}±{h_pred.get('std', 0):.1f} | {purpose} |\n")
+        for i, (pw, vs, vf, purpose) in enumerate(verify_points, 1):
+            f.write(f"| {i} | {pw:.0f} | {vs:.0f} | {vf:.1f} | — | {purpose} |\n")
 
         f.write("\n## 3. 验证实验设计\n\n")
         f.write("### 3.1 试样制备\n")
         f.write("- 基材: Q355低碳钢板\n")
         f.write("- 粉末: JG-1铁基自熔合金\n")
         f.write("- 工艺: 激光熔覆\n")
-        f.write("- 扫描速度: 300 mm/min\n")
         f.write("- 扫描间距: 0.05 mm\n")
-        f.write("- 每个功率点: 至少3个重复试样\n\n")
+        f.write("- 每个参数组合: 至少3个重复试样\n\n")
 
         f.write("### 3.2 表征方法\n")
         f.write("1. **金相分析**: 光学显微镜(50x-1000x) + 图像分割定量\n")
         f.write("2. **显微硬度**: 维氏硬度计(500gf, 10s)，每试样10个点\n")
-        f.write("3. **XRD**: 物相分析，2θ=30-71°\n")
-        f.write("4. **EIS**: 电化学阻抗谱(100kHz-0.01Hz)\n")
-        f.write("5. **摩擦磨损**: 球盘磨损试验(500g, 10min, 300rpm)\n\n")
+        f.write("3. **截面形貌**: 测量稀释率、宽高比(W/H)\n")
+        f.write("4. **摩擦磨损**: 球盘磨损试验\n\n")
 
         f.write("### 3.3 评价指标\n")
         f.write("- 熔覆层显微硬度(HV): 目标>385 HV\n")
+        f.write("- 宽高比(W/H): 目标>3（多道搭接要求）\n")
+        f.write("- 稀释率(%): 目标30-50%\n")
         f.write("- 气孔率(%): 目标<0.5%\n")
-        f.write("- 裂纹率(%): 目标<0.5%\n")
-        f.write("- 稳态摩擦系数: 目标<0.15\n")
-        f.write("- 腐蚀抗性(Rct): 目标>3000Ω\n\n")
+        f.write("- 裂纹率(%): 目标<0.5%\n\n")
 
-        f.write("### 3.4 预期结果与接受标准\n\n")
-        f.write("| 功率点 | 预期硬度 | 接受范围(±2σ) | 判定标准 |\n")
-        f.write("|--------|---------|--------------|----------|\n")
-        for pw, purpose in verify_points:
-            pw_int = int(pw)
-            if pw_int in conf_results:
-                c = conf_results[pw_int]
-                f.write(f"| {pw:.0f}W | {c['mean']:.1f} | "
-                        f"{c['ci_95'][0]:.1f}-{c['ci_95'][1]:.1f} | "
-                        f"实测落入95%CI内 |\n")
+        f.write("### 3.4 验证结果记录模板\n\n")
+        f.write("| 参数组合 | 实测硬度(HV) | 预测硬度(HV) | 误差(%) | 宽高比 | 稀释率(%) | 是否合格 |\n")
+        f.write("|---------|-------------|-------------|---------|--------|----------|----------|\n")
+        for i, (pw, vs, vf, _) in enumerate(verify_points, 1):
+            f.write(f"| {i}. P={pw:.0f}, Vs={vs:.0f}, Vf={vf:.1f} | | | | | | |\n")
+
+        f.write("\n### 3.5 接受标准\n")
+        f.write("- 硬度预测误差 < 10%\n")
+        f.write("- 宽高比 > 3（满足多道搭接）\n")
+        f.write("- 稀释率 30-50%（保证冶金结合）\n")
+        f.write("- 无可见裂纹和气孔\n")
 
     print(f"  [OK] {plan_path}")
     return plan_path
@@ -374,12 +414,18 @@ def main():
     predict_hardness = make_predictor(model, scaler, features, df_median)
     predict_defects = make_defect_predictor(df_median, features)
 
-    test_powers = [900, 1200, 1500, 1800]
-    print("  功率→硬度预测:")
-    for pw in test_powers:
-        h = predict_hardness(pw)
-        actual = df[df["power_w"] == pw]["mh_mean_hv"].mean()
-        print(f"    {pw}W: predicted={h:.1f} HV, actual={actual:.1f} HV")
+    # 测试预测（3D: P, Vs, Vf）
+    test_params = [
+        [900, 300, 10], [1200, 300, 10], [1500, 300, 10], [1800, 300, 10],
+        [1000, 250, 8], [1400, 350, 12],
+    ]
+    print("  (P, Vs, Vf) → 硬度预测:")
+    for params in test_params:
+        h = predict_hardness(params)
+        pw = params[0]
+        actual_rows = df[df["power_w"] == pw]
+        actual = actual_rows["mh_mean_hv"].mean() if len(actual_rows) > 0 else 0
+        print(f"    ({params[0]}W, {params[1]}mm/min, {params[2]}g/min): pred={h:.1f} HV, actual={actual:.1f} HV")
 
     print("\n[3/7] 多目标优化(Pareto前沿)...")
     pareto_front = multi_objective_optimize(predict_hardness, predict_defects)

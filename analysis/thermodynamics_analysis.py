@@ -37,9 +37,9 @@ print("-" * 80)
 # v: 扫描速度 (mm/min) - 假设为固定值
 # h: 扫描间距 (mm) - 假设为固定值
 
-# 假设工艺参数
-scan_speed = 300  # mm/min (典型值)
-scan_spacing = 0.05  # mm (典型值)
+# 实际工艺参数 (来自 data/paper_data/工艺参数.csv)
+scan_speed = 600  # mm/min (实际值: 10 mm/s = 600 mm/min)
+scan_spacing = 0.05  # mm (扫描间距)
 
 # 从功率字符串提取数值
 def extract_power(power_str):
