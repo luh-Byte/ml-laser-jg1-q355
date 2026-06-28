@@ -17,13 +17,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy import stats
 
+# 导入统一绘图风格
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "utils"))
+from plot_style import setup_plot_style, style_axes, create_gradient_rect, add_subplot_label, calc_sem, save_fig, COLORS, POWER_LIST, POWER_NUM
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
 FIG_DIR = os.path.join(OUTPUT_DIR, "figures", "univariate")
 os.makedirs(FIG_DIR, exist_ok=True)
 
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
-plt.rcParams["axes.unicode_minus"] = False
+# 设置统一绘图风格
+setup_plot_style()
 
 
 def load_data():

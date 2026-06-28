@@ -22,14 +22,18 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.metrics import r2_score, mean_squared_error
 
+# 导入统一绘图风格
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "utils"))
+from plot_style import setup_plot_style, style_axes, create_gradient_rect, add_subplot_label, calc_sem, save_fig, COLORS, POWER_LIST, POWER_NUM
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "analysis_output")
 FIG_DIR = os.path.join(OUTPUT_DIR, "figures")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(FIG_DIR, exist_ok=True)
 
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
-plt.rcParams["axes.unicode_minus"] = False
+# 设置统一绘图风格
+setup_plot_style()
 
 
 # ===================== 1. 精简特征定义 =====================
