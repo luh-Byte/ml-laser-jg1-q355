@@ -15,11 +15,6 @@ ML训练脚本 — FEniCSx温度场 + CCT后处理 整合训练
 """
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import Ridge, Lasso, ElasticNet
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import LeaveOneGroupOut, cross_val_predict
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -27,6 +22,7 @@ import sys, os, json
 
 sys.path.insert(0, r'D:\ML-Laser-JG1-Q355\ml-laser-jg1-q355\utils')
 from plot_style import setup_plot_style, style_axes, add_subplot_label, save_fig
+from model_utils import HardnessModel, compare_models, MODEL_REGISTRY
 setup_plot_style()
 
 BASE = r'D:\ML-Laser-JG1-Q355\ml-laser-jg1-q355'
@@ -64,63 +60,38 @@ def get_feature_sets():
 
 
 def get_models():
-    """定义模型"""
-    return {
-        'Ridge': Ridge(alpha=1.0),
-        'Lasso': Lasso(alpha=0.1),
-        'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5),
-        'RFR': RandomForestRegressor(n_estimators=200, max_depth=8, min_samples_leaf=3, random_state=42),
-        'GBR': GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05,
-                                         min_samples_leaf=3, random_state=42),
-    }
+    """定义模型 (使用 HardnessModel 注册表)"""
+    return {name: name for name in MODEL_REGISTRY.keys()}
 
 
 def train_and_evaluate(df_train, df_val, features, target='hardness_HV'):
-    """训练+验证"""
+    """训练+验证 (使用 HardnessModel 类)"""
     X_train = df_train[features].values
     y_train = df_train[target].values
     X_val = df_val[features].values
     y_val = df_val[target].values
-
-    scaler = StandardScaler()
-    X_train_s = scaler.fit_transform(X_train)
-    X_val_s = scaler.transform(X_val)
-
-    # LOGO-CV (按功率组)
-    groups_train = df_train['power_w'].values
-    logo = LeaveOneGroupOut()
+    groups = df_train['power_w'].values
 
     results = []
-    for name, model in get_models().items():
-        # LOGO-CV
-        y_cv = np.zeros_like(y_train)
-        for train_idx, test_idx in logo.split(X_train_s, y_train, groups_train):
-            m = type(model)(**model.get_params())
-            m.fit(X_train_s[train_idx], y_train[train_idx])
-            y_cv[test_idx] = m.predict(X_train_s[test_idx])
-
-        # 验证集
-        model.fit(X_train_s, y_train)
-        y_val_pred = model.predict(X_val_s)
-
-        # 特征重要性 (树模型)
-        if hasattr(model, 'feature_importances_'):
-            importances = dict(zip(features, model.feature_importances_))
-        else:
-            importances = {}
+    for name in get_models():
+        m = HardnessModel(name)
+        m.train(X_train, y_train, feature_names=features)
+        logo = m.logo_cv(X_train, y_train, groups)
+        val = m.evaluate(X_val, y_val)
+        imp = m.feature_importance()
 
         results.append({
             'model': name,
             'features': features,
             'n_features': len(features),
-            'train_r2': round(r2_score(y_train, model.predict(X_train_s)), 4),
-            'logo_r2': round(r2_score(y_train, y_cv), 4),
-            'logo_rmse': round(np.sqrt(mean_squared_error(y_train, y_cv)), 1),
-            'val_pred': round(float(y_val_pred[0]), 1),
+            'train_r2': round(m.train_metrics['train_r2'], 4),
+            'logo_r2': round(logo['r2'], 4),
+            'logo_rmse': round(logo['rmse'], 1),
+            'val_pred': round(float(val['y_pred'][0]), 1),
             'val_real': round(float(y_val[0]), 1),
-            'val_err': round(float(abs(y_val_pred[0] - y_val[0])), 1),
-            'val_err_pct': round(float(abs(y_val_pred[0] - y_val[0]) / y_val[0] * 100), 1),
-            'importances': importances,
+            'val_err': round(float(abs(val['y_pred'][0] - y_val[0])), 1),
+            'val_err_pct': round(float(abs(val['y_pred'][0] - y_val[0]) / y_val[0] * 100), 1),
+            'importances': dict(zip(features, m.model.feature_importances_)) if hasattr(m.model, 'feature_importances_') else {},
         })
 
     return results
@@ -155,18 +126,10 @@ def plot_results(all_results, df_train, df_val, target='hardness_HV'):
     best_feats = best['features']
     X_all = df_train[best_feats].values
     y_all = df_train[target].values
-    scaler = StandardScaler()
-    X_s = scaler.fit_transform(X_all)
 
-    # 用最佳模型重新训练
-    from sklearn.ensemble import GradientBoostingRegressor
-    if best['model'] == 'GBR':
-        m = GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05,
-                                      min_samples_leaf=3, random_state=42)
-    else:
-        m = Ridge(alpha=1.0)
-    m.fit(X_s, y_all)
-    y_pred_train = m.predict(X_s)
+    best_model = HardnessModel(best['model'])
+    best_model.train(X_all, y_all, feature_names=best_feats)
+    y_pred_train = best_model.predict(X_all)
 
     powers = df_train['power_w'].values
     colors = {900: '#2980b9', 1200: '#e67e22', 1500: '#27ae60', 1800: '#c0392b',
@@ -198,23 +161,14 @@ def plot_results(all_results, df_train, df_val, target='hardness_HV'):
 
     model_preds = {}
     for name in ['Ridge', 'RFR', 'GBR']:
-        if name == 'GBR':
-            m = GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05,
-                                          min_samples_leaf=3, random_state=42)
-        elif name == 'RFR':
-            from sklearn.ensemble import RandomForestRegressor
-            m = RandomForestRegressor(n_estimators=200, max_depth=8, min_samples_leaf=3, random_state=42)
-        else:
-            m = Ridge(alpha=1.0)
-        m.fit(X_s_train, y_train)
-        # 预测4组真实功率 (用仿真数据的平均特征)
+        m_obj = HardnessModel(name)
+        m_obj.train(X_s_train, y_train, feature_names=best_feats)
         preds = []
         for p in real_ps:
             sim_subset = df_train[(df_train['power_w'] == p) & (df_train['scan_speed_mm_s'] == 10.0)]
             if len(sim_subset) > 0:
                 x = sim_subset[best_feats].values
-                x_s = scaler.transform(x)
-                preds.append(float(m.predict(x_s)[0]))
+                preds.append(float(m_obj.predict(x)[0]))
             else:
                 preds.append(np.nan)
         model_preds[name] = preds
