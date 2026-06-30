@@ -12,47 +12,42 @@ echo ============================================
 echo.
 
 :: ============================================
-:: 步骤1: 检查/创建虚拟环境
+:: 步骤1: 检查Python环境
 :: ============================================
-if not exist ".venv\Scripts\python.exe" (
-    echo [1/3] 正在创建虚拟环境...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] 虚拟环境创建失败！请检查Python是否正确安装。
-        echo 请确保已安装 Python 3.10+ 并添加到系统PATH。
-        pause
-        exit /b 1
-    )
-    echo 虚拟环境创建完成
-) else (
-    echo [1/3] 虚拟环境已存在
+where python >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] 未找到Python！请确保Python 3.10+已安装并添加到系统PATH。
+    pause
+    exit /b 1
 )
 
+echo [1/2] Python环境检查:
+python --version
+
 :: ============================================
-:: 步骤2: 检查依赖
+:: 步骤2: 检查核心依赖
 :: ============================================
-echo [2/3] 检查依赖...
+echo [2/2] 检查依赖...
 set NEED_INSTALL=0
 
-.venv\Scripts\python.exe -c "import pandas" 2>nul
+python -c "import pandas" 2>nul
 if errorlevel 1 set NEED_INSTALL=1
 
-.venv\Scripts\python.exe -c "import numpy" 2>nul
+python -c "import numpy" 2>nul
 if errorlevel 1 set NEED_INSTALL=1
 
-.venv\Scripts\python.exe -c "import matplotlib" 2>nul
+python -c "import matplotlib" 2>nul
 if errorlevel 1 set NEED_INSTALL=1
 
-.venv\Scripts\python.exe -c "import sklearn" 2>nul
+python -c "import sklearn" 2>nul
 if errorlevel 1 set NEED_INSTALL=1
 
-.venv\Scripts\python.exe -c "import cv2" 2>nul
+python -c "import cv2" 2>nul
 if errorlevel 1 set NEED_INSTALL=1
 
 if %NEED_INSTALL%==1 (
-    echo 正在安装依赖（首次运行可能需要5-10分钟）...
-    .venv\Scripts\pip.exe install pandas numpy matplotlib scikit-learn scipy xgboost opencv-python pillow shap optuna python-docx openpyxl pyyaml tqdm joblib lxml torch torchvision chromadb sentence-transformers
+    echo 正在安装核心依赖（首次运行可能需要几分钟）...
+    pip install pandas numpy matplotlib scikit-learn scipy opencv-python pillow shap python-docx openpyxl pyyaml tqdm joblib
     if errorlevel 1 (
         echo.
         echo [ERROR] 依赖安装失败！请检查网络连接。
@@ -105,7 +100,7 @@ echo  输出: analysis_output/ 目录
 echo ============================================
 echo.
 
-.venv\Scripts\python.exe image/picture_processing.py
+python image/picture_processing.py
 
 if errorlevel 1 (
     echo.
@@ -135,7 +130,7 @@ echo  输出: analysis_output/figures/paper/ 目录
 echo ============================================
 echo.
 
-.venv\Scripts\python.exe figures/generate_paper_figures.py
+python figures/generate_paper_figures.py
 
 if errorlevel 1 (
     echo.
@@ -167,12 +162,12 @@ echo  阶段4: 多目标优化与Pareto分析
 echo ============================================
 echo.
 echo 可用参数:
-echo   python run.py              - 执行完整四阶段流程
-echo   python run.py --stage N    - 执行单个阶段 (N=1,2,3,4)
-echo   python run.py --help       - 显示帮助信息
+echo   python -m pipeline            - 执行完整四阶段流程
+echo   python -m pipeline --stage N - 执行单个阶段 (N=1,2,3,4)
+echo   python -m pipeline --help    - 显示帮助信息
 echo.
 
-.venv\Scripts\python.exe run.py
+python -m pipeline
 
 if errorlevel 1 (
     echo.
@@ -201,7 +196,7 @@ echo  输出: analysis_output/ 目录
 echo ============================================
 echo.
 
-.venv\Scripts\python.exe analysis/fix_issues.py
+python analysis/fix_issues.py
 
 if errorlevel 1 (
     echo.

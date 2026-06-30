@@ -170,12 +170,19 @@ def create_results_folder():
         return False, str(e)
 
 def backup_current_results():
-    """备份当前结果到带时间戳的文件夹"""
+    """备份当前结果 — 只保留最新一次备份"""
+    # 先清理旧备份
+    if os.path.exists(RESULTS_DIR):
+        for item in os.listdir(RESULTS_DIR):
+            item_path = os.path.join(RESULTS_DIR, item)
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path, ignore_errors=True)
+
     success, folder_path = create_results_folder()
-    
+
     if not success:
         return success, folder_path
-    
+
     # 复制输出文件到新文件夹
     files_copied = 0
     try:
@@ -184,19 +191,19 @@ def backup_current_results():
                 # 跳过results_by_date目录
                 if 'results_by_date' in root:
                     continue
-                    
+
                 for f in files:
                     src = os.path.join(root, f)
                     rel_path = os.path.relpath(src, OUTPUT_DIR)
                     dst = os.path.join(folder_path, rel_path)
-                    
+
                     # 创建目标目录
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    
+
                     # 复制文件
                     shutil.copy2(src, dst)
                     files_copied += 1
-        
+
         return True, f"已备份到: {folder_path} ({files_copied} 个文件)"
     except Exception as e:
         return False, str(e)
