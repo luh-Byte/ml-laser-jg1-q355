@@ -34,24 +34,24 @@ if errorlevel 1 (
 
 echo.
 echo ============================================
-echo  Select:
-echo    [1] Image Processing (segmentation + ML)
-echo    [2] Paper Figures (15 charts)
-echo    [3] 4-Stage Pipeline
-echo    [4] Physics Model Fix
-echo    [5] Hardness Predictor (interactive)
-echo    [6] ML Training (FEniCSx+CCT)
+echo  Workflow:
+echo    [1] Image Segmentation (data prep)
+echo    [2] ML Training (FEniCSx + CCT model)
+echo    [3] Hardness Predictor (interactive)
+echo    [4] Paper Figures (visualization)
+echo    [5] 4-Stage Pipeline (full)
+echo    [6] Physics Model Fix (debug)
 echo    [0] Exit
 echo ============================================
 echo.
 set /p choice=Enter (0-6): 
 
 if "%choice%"=="1" goto RUN_IMAGE
-if "%choice%"=="2" goto RUN_FIGURES
-if "%choice%"=="3" goto RUN_PIPELINE
-if "%choice%"=="4" goto RUN_FIX
-if "%choice%"=="5" goto RUN_PREDICTOR
-if "%choice%"=="6" goto RUN_ML
+if "%choice%"=="2" goto RUN_ML
+if "%choice%"=="3" goto RUN_PREDICTOR
+if "%choice%"=="4" goto RUN_FIGURES
+if "%choice%"=="5" goto RUN_PIPELINE
+if "%choice%"=="6" goto RUN_FIX
 if "%choice%"=="0" goto EXIT
 
 echo [ERROR] Invalid option
@@ -60,6 +60,20 @@ goto MENU
 :RUN_IMAGE
 echo.
 python image/picture_processing.py
+echo.
+pause
+goto MENU
+
+:RUN_ML
+echo.
+python analysis/ml_training_integrated.py
+echo.
+pause
+goto MENU
+
+:RUN_PREDICTOR
+echo.
+python analysis/hardness_predictor.py
 echo.
 pause
 goto MENU
@@ -81,20 +95,6 @@ goto MENU
 :RUN_FIX
 echo.
 python analysis/fix_issues.py
-echo.
-pause
-goto MENU
-
-:RUN_PREDICTOR
-echo.
-python analysis/hardness_predictor.py
-echo.
-pause
-goto MENU
-
-:RUN_ML
-echo.
-python analysis/ml_training_integrated.py
 echo.
 pause
 goto MENU
