@@ -29,9 +29,10 @@ def run_pipeline():
             print(f"  [ERROR] 脚本文件不存在: {script}")
             return False
         
-        result = subprocess.run([sys.executable, script_path], 
-                                capture_output=True, text=True, cwd=BASE_DIR)
-        
+        result = subprocess.run([sys.executable, script_path],
+                                capture_output=True, text=True, cwd=BASE_DIR,
+                                encoding="utf-8", errors="replace")
+
         if result.stdout:
             print(result.stdout.strip())
         if result.stderr:
@@ -63,9 +64,10 @@ def run_single_stage(stage_index):
         print(f"  [ERROR] 脚本文件不存在: {script}")
         return False
     
-    result = subprocess.run([sys.executable, script_path], 
-                            capture_output=True, text=True, cwd=BASE_DIR)
-    
+    result = subprocess.run([sys.executable, script_path],
+                            capture_output=True, text=True, cwd=BASE_DIR,
+                            encoding="utf-8", errors="replace")
+
     if result.stdout:
         print(result.stdout.strip())
     if result.stderr:
