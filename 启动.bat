@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+chcp 65001
 title 激光熔覆金相分析ML系统 v2.0
 set PYTHONIOENCODING=utf-8
 
@@ -14,11 +14,19 @@ echo.
 :: ============================================
 :: 步骤1: 检查Python环境
 :: ============================================
+:: 尝试系统PATH中的python
 where python >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] 未找到Python！请确保Python 3.10+已安装并添加到系统PATH。
-    pause
-    exit /b 1
+    :: 尝试常见Python安装路径
+    if exist "C:\Users\liuyuhe\AppData\Local\Programs\Python\Python311\python.exe" (
+        set "PATH=C:\Users\liuyuhe\AppData\Local\Programs\Python\Python311;C:\Users\liuyuhe\AppData\Local\Programs\Python\Python311\Scripts;%PATH%"
+    ) else if exist "C:\Python311\python.exe" (
+        set "PATH=C:\Python311;C:\Python311\Scripts;%PATH%"
+    ) else (
+        echo [ERROR] 未找到Python！请确保Python 3.10+已安装并添加到系统PATH。
+        pause
+        exit /b 1
+    )
 )
 
 echo [1/2] Python环境检查:
